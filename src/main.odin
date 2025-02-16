@@ -26,20 +26,23 @@ main :: proc () {
 
 
 	fmt.println("SDL CreateWindow")
-	window_size := [2] i32 {800, 600}
+	window := WindowData {
+		size = {800, 600}
+	}
+
 	window_flags := SDL.WindowFlags{.VULKAN, .RESIZABLE}
-	window := SDL.CreateWindow("My App", window_size.x, window_size.y, window_flags);
-	if window == nil {
-		fmt.println("failed to create window")
+	sdl_window := SDL.CreateWindow("My App", window.size.x, window.size.y, window_flags);
+	if sdl_window == nil {
+		fmt.println("failed to create sdl_window")
 		return
 	}
-	defer SDL.DestroyWindow(window)
+	defer SDL.DestroyWindow(sdl_window)
 
-	success := SDL.ClaimWindowForGPUDevice(gpu_device, window)
+	success := SDL.ClaimWindowForGPUDevice(gpu_device, sdl_window)
 	if !success {
 		return
 	}
-	defer SDL.ReleaseWindowFromGPUDevice(gpu_device, window)
+	defer SDL.ReleaseWindowFromGPUDevice(gpu_device, sdl_window)
 
 	LoadShader :: proc(
 		gpu_device: ^SDL.GPUDevice, 
@@ -76,7 +79,7 @@ main :: proc () {
 	assert(shader_frag != nil)
 
 	color_target_desc := []SDL.GPUColorTargetDescription{{
-		format = SDL.GetGPUSwapchainTextureFormat(gpu_device, window)
+		format = SDL.GetGPUSwapchainTextureFormat(gpu_device, sdl_window)
 	}}
 
 	pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
@@ -119,18 +122,17 @@ main :: proc () {
 		}
 	}
 
-	ui_rect_pipeline := SDL.CreateGPUGraphicsPipeline(gpu_device, ui_rect_pipeline_info)
-	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, ui_rect_pipeline)
+	window.ui_rect_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, ui_rect_pipeline_info)
+	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, window. ui_rect_pipeline)
 	fmt.println("release shaders")
 
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_shader_vert)
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_shader_frag)
 
-
-	mui_ctx := new(mui.Context)
-	mui.init(mui_ctx)
-	mui_ctx.text_width = mui.default_atlas_text_width
-	mui_ctx.text_height = mui.default_atlas_text_height
+	window.mui_ctx = new(mui.Context)
+	mui.init(window.mui_ctx)
+	window.mui_ctx.text_width = mui.default_atlas_text_width
+	window.mui_ctx.text_height = mui.default_atlas_text_height
 
 	sdl_to_microui_btn :: proc(sdl_button: u8) -> mui.Mouse {
 		switch sdl_button {
@@ -211,11 +213,11 @@ main :: proc () {
 				keep_running = false
 				continue
 			} else if sdl_event.type == .WINDOW_RESIZED {
-				window := sdl_event.window
-				window_size = {window.data1, window.data2}
+				window_event := sdl_event.window
+				window.size = {window_event.data1, window_event.data2}
 				continue
 			}
-			process_sdl_event(mui_ctx, sdl_event)
+			process_sdl_event(window.mui_ctx, sdl_event)
 		}
 
 		ticks := SDL.GetTicksNS()
@@ -226,7 +228,7 @@ main :: proc () {
 
 		cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
 		swapchain_tex: ^SDL.GPUTexture
-		gotit := SDL.WaitAndAcquireGPUSwapchainTexture(cmd_buf, window, &swapchain_tex, nil, nil)
+		gotit := SDL.WaitAndAcquireGPUSwapchainTexture(cmd_buf, sdl_window, &swapchain_tex, nil, nil)
 		assert(gotit)
 		assert(swapchain_tex != nil)
 
@@ -239,11 +241,11 @@ main :: proc () {
 
 
 
-		mui.begin(mui_ctx)
-		if mui.window(mui_ctx, "window", {100, 100, 400, 300}) {
-			mui.label(mui_ctx, "My Label")
+		mui.begin(window.mui_ctx)
+		if mui.window(window.mui_ctx, "window", {100, 100, 400, 300}) {
+			mui.label(window.mui_ctx, "My Label")
 		}
-		mui.end(mui_ctx)
+		mui.end(window.mui_ctx)
 
 
 
@@ -251,39 +253,69 @@ main :: proc () {
 		SDL.BindGPUGraphicsPipeline(render_pass, pipeline)
 		SDL.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
 
-		mui_cmd: ^mui.Command
+		draw_mui(&window, cmd_buf, render_pass)
 
-		for mui.next_command(mui_ctx, &mui_cmd) {
-			#partial switch e in mui_cmd.variant {
-			case ^mui.Command_Jump: fmt.println("Command_Jump")
-			case ^mui.Command_Clip: fmt.println("Command_Clip")
-			case ^mui.Command_Rect: 
-				rect := &e.rect
-				VertexUniformData :: struct {
-					vp_size: [4]f32,
-					rect: [4]f32,
-				}
-				vert_uniform_data := VertexUniformData {
-					vp_size = {f32 (window_size.x), f32 (window_size.y), 0, 0},
-					rect = {f32(rect.x), f32(rect.y), f32(rect.w), f32(rect.h)},
-				}
-				SDL.PushGPUVertexUniformData(cmd_buf, 0, &vert_uniform_data, size_of(vert_uniform_data))
-				
-				color := &e.color
-				frag_color := [4]f32 {f32(color.r)/255, f32(color.g)/255, f32(color.b)/255, f32(color.a) / 255}
-				SDL.PushGPUFragmentUniformData(cmd_buf, 0, &frag_color, size_of(frag_color))
-
-				SDL.BindGPUGraphicsPipeline(render_pass, ui_rect_pipeline)
-				SDL.DrawGPUPrimitives(render_pass, 4, 1, 0, 0)
-			// case ^mui.Command_Text: fmt.println("Command_Text")
-			// case ^mui.Command_Icon: fmt.println("Command_Icon")
-			}
-		}
 
 		SDL.EndGPURenderPass(render_pass)
 		submit_result := SDL.SubmitGPUCommandBuffer(cmd_buf)
 
 	}
 
+}
 
+WindowData :: struct {
+	mui_ctx: ^mui.Context,
+	size: [2]i32,
+	ui_rect_pipeline: ^SDL.GPUGraphicsPipeline,
+}
+
+draw_mui :: proc(window: ^WindowData, cmd_buf: ^SDL.GPUCommandBuffer, render_pass: ^SDL.GPURenderPass) {
+
+	mui_ctx: ^mui.Context = window.mui_ctx
+	mui_cmd: ^mui.Command
+
+	for mui.next_command(mui_ctx, &mui_cmd) {
+		#partial switch e in mui_cmd.variant {
+		case ^mui.Command_Jump: fmt.println("Command_Jump")
+		case ^mui.Command_Clip: fmt.println("Command_Clip")
+		case ^mui.Command_Rect: 
+			rect := &e.rect
+			VertexUniformData :: struct {
+				vp_size: [4]f32,
+				rect: [4]f32,
+			}
+			vert_uniform_data := VertexUniformData {
+				vp_size = {f32 (window.size.x), f32 (window.size.y), 0, 0},
+				rect = {f32(rect.x), f32(rect.y), f32(rect.w), f32(rect.h)},
+			}
+			SDL.PushGPUVertexUniformData(cmd_buf, 0, &vert_uniform_data, size_of(vert_uniform_data))
+			
+			color := &e.color
+			frag_color := [4]f32 {f32(color.r)/255, f32(color.g)/255, f32(color.b)/255, f32(color.a) / 255}
+			SDL.PushGPUFragmentUniformData(cmd_buf, 0, &frag_color, size_of(frag_color))
+
+			SDL.BindGPUGraphicsPipeline(render_pass, window.ui_rect_pipeline)
+			SDL.DrawGPUPrimitives(render_pass, 4, 1, 0, 0)
+		// case ^mui.Command_Text: fmt.println("Command_Text")
+		case ^mui.Command_Icon:
+
+			rect := &e.rect
+			VertexUniformData :: struct {
+				vp_size: [4]f32,
+				rect: [4]f32,
+			}
+			vert_uniform_data := VertexUniformData {
+				vp_size = {f32 (window.size.x), f32 (window.size.y), 0, 0},
+				rect = {f32(rect.x), f32(rect.y), f32(rect.w), f32(rect.h)},
+			}
+			SDL.PushGPUVertexUniformData(cmd_buf, 0, &vert_uniform_data, size_of(vert_uniform_data))
+			
+			color := &e.color
+			frag_color := [4]f32 {f32(color.r)/255, f32(color.g)/255, f32(color.b)/255, f32(color.a) / 255}
+			SDL.PushGPUFragmentUniformData(cmd_buf, 0, &frag_color, size_of(frag_color))
+
+			SDL.BindGPUGraphicsPipeline(render_pass, window.ui_rect_pipeline)
+			SDL.DrawGPUPrimitives(render_pass, 4, 1, 0, 0)
+		}
+	}
 }
