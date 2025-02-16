@@ -5,6 +5,7 @@ import SDL "vendor:sdl3"
 import mui "vendor:microui"
 
 import "core:fmt"
+import "core:mem"
 
 // import "core:runtime"
 
@@ -106,11 +107,8 @@ main :: proc () {
 	SDL.ReleaseGPUShader(gpu_device, shader_vert)
 	SDL.ReleaseGPUShader(gpu_device, shader_frag)
 
-	fmt.println("loading rect shaders")
 	ui_rect_shader_vert := LoadShader(gpu_device, "Content/Shaders/ui/rect.vert.spv", .VERTEX, 0, 0, 0, 1)
 	ui_rect_shader_frag := LoadShader(gpu_device, "Content/Shaders/ui/rect.frag.spv", .FRAGMENT, 0, 0, 0, 1)
-
-	fmt.println("creating pipeline")
 
 	ui_rect_pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
 		vertex_shader = ui_rect_shader_vert,
@@ -122,12 +120,93 @@ main :: proc () {
 		}
 	}
 
-	window.ui_rect_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, ui_rect_pipeline_info)
-	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, window. ui_rect_pipeline)
-	fmt.println("release shaders")
+	ui_rect_pipeline := SDL.CreateGPUGraphicsPipeline(gpu_device, ui_rect_pipeline_info)
+	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, ui_rect_pipeline)
 
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_shader_vert)
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_shader_frag)
+
+
+
+	ui_rect_tex_shader_vert := LoadShader(gpu_device, "Content/Shaders/ui/rect_tex.vert.spv", .VERTEX, 0, 0, 0, 1)
+	ui_rect_tex_shader_frag := LoadShader(gpu_device, "Content/Shaders/ui/rect_tex.frag.spv", .FRAGMENT, 1, 0, 0, 1)
+
+	color_target_desc_tex := []SDL.GPUColorTargetDescription{{
+		format = SDL.GetGPUSwapchainTextureFormat(gpu_device, sdl_window),
+		blend_state = {
+			src_color_blendfactor = .SRC_ALPHA,
+			dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA,
+			color_blend_op = .ADD,
+			src_alpha_blendfactor = .SRC_ALPHA,
+			dst_alpha_blendfactor = .ONE_MINUS_SRC_ALPHA,
+			alpha_blend_op = .ADD,
+			enable_blend = true,
+		}
+	}}
+
+	ui_rect_tex_pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
+		vertex_shader = ui_rect_tex_shader_vert,
+		fragment_shader = ui_rect_tex_shader_frag,
+		primitive_type = .TRIANGLESTRIP,
+		target_info = {
+			num_color_targets = 1,
+			color_target_descriptions = raw_data(color_target_desc_tex),
+		}
+	}
+
+	ui_rect_tex_pipeline := SDL.CreateGPUGraphicsPipeline(gpu_device, ui_rect_tex_pipeline_info)
+	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, ui_rect_tex_pipeline)
+	fmt.println("release shaders")
+
+	SDL.ReleaseGPUShader(gpu_device, ui_rect_tex_shader_vert)
+	SDL.ReleaseGPUShader(gpu_device, ui_rect_tex_shader_frag)
+
+// GPUTextureCreateInfo :: struct {
+// 	type:                 GPUTextureType,        /**< The base dimensionality of the texture. */
+// 	format:               GPUTextureFormat,      /**< The pixel format of the texture. */
+// 	usage:                GPUTextureUsageFlags,  /**< How the texture is intended to be used by the client. */
+// 	width:                Uint32,                /**< The width of the texture. */
+// 	height:               Uint32,                /**< The height of the texture. */
+// 	layer_count_or_depth: Uint32,                /**< The layer count or depth of the texture. This value is treated as a layer count on 2D array textures, and as a depth value on 3D textures. */
+// 	num_levels:           Uint32,                /**< The number of mip levels in the texture. */
+// 	sample_count:         GPUSampleCount,        /**< The number of samples per texel. Only applies if the texture is used as a render target. */
+
+// 	props:                PropertiesID,          /**< A properties ID for extensions. Should be 0 if no extensions are needed. */
+// }
+
+	ui_texture := SDL.CreateGPUTexture(gpu_device, SDL.GPUTextureCreateInfo{
+		type = .D2,
+		format = .A8_UNORM,
+		usage = {.SAMPLER},
+		width = mui.DEFAULT_ATLAS_WIDTH,
+		height = mui.DEFAULT_ATLAS_HEIGHT,
+		layer_count_or_depth = 1,
+		num_levels = 1,
+	})
+	defer SDL.ReleaseGPUTexture(gpu_device, ui_texture)
+
+	ui_sampler := SDL.CreateGPUSampler(gpu_device, SDL.GPUSamplerCreateInfo{
+	})
+	defer SDL.ReleaseGPUSampler(gpu_device, ui_sampler)
+
+	ui_sampler_binding := SDL.GPUTextureSamplerBinding {
+		texture = ui_texture,
+		sampler = ui_sampler,
+	}
+
+	buffer_size: int = mui.DEFAULT_ATLAS_WIDTH * mui.DEFAULT_ATLAS_HEIGHT
+	transfer_buffer := SDL.CreateGPUTransferBuffer(gpu_device, SDL.GPUTransferBufferCreateInfo{
+		usage = .UPLOAD,
+		size = u32(buffer_size),
+	})
+	defer SDL.ReleaseGPUTransferBuffer(gpu_device, transfer_buffer)
+
+	transfer_buffer_mem := SDL.MapGPUTransferBuffer(gpu_device, transfer_buffer, false)
+	mem.copy_non_overlapping(transfer_buffer_mem, &mui.default_atlas_alpha[0], buffer_size);
+	SDL.UnmapGPUTransferBuffer(gpu_device, transfer_buffer)
+
+	uploaded := false
+
 
 	window.mui_ctx = new(mui.Context)
 	mui.init(window.mui_ctx)
@@ -204,6 +283,8 @@ main :: proc () {
 	last_ticks: u64 = SDL.GetTicksNS()
 	// surface := SDL.GetWindowSurface(window)
 
+	bool_value: bool = false
+	my_color := [4]f32{1, 0.5, 0.2, 1}
 	keep_running := true
 	for keep_running {
 		sdl_event: SDL.Event = ---
@@ -242,18 +323,37 @@ main :: proc () {
 
 
 		mui.begin(window.mui_ctx)
+
 		if mui.window(window.mui_ctx, "window", {100, 100, 400, 300}) {
 			mui.label(window.mui_ctx, "My Label")
+			mui.checkbox(window.mui_ctx, "My Checkbox", &bool_value)
+			mui.number(window.mui_ctx, &my_color.x, 1.0/255)
 		}
 		mui.end(window.mui_ctx)
 
+
+		if !uploaded {
+			uploaded = true
+			copy_pass := SDL.BeginGPUCopyPass(cmd_buf)
+			SDL.UploadToGPUTexture(copy_pass, SDL.GPUTextureTransferInfo {
+				transfer_buffer = transfer_buffer,
+				pixels_per_row = mui.DEFAULT_ATLAS_WIDTH,
+				rows_per_layer = mui.DEFAULT_ATLAS_HEIGHT,
+			}, SDL.GPUTextureRegion {
+				texture = ui_texture, 
+				x = 0, y = 0, 
+				w = mui.DEFAULT_ATLAS_WIDTH, h = mui.DEFAULT_ATLAS_HEIGHT, d = 1,
+			}, false)
+			SDL.EndGPUCopyPass(copy_pass)
+		}
 
 
 		render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info, 1, nil)
 		SDL.BindGPUGraphicsPipeline(render_pass, pipeline)
 		SDL.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
 
-		draw_mui(&window, cmd_buf, render_pass)
+		draw_ctx := DrawContext {cmd_buf, render_pass, {ui_sampler_binding}, ui_rect_pipeline, ui_rect_tex_pipeline}
+		draw_mui(&window, &draw_ctx)
 
 
 		SDL.EndGPURenderPass(render_pass)
@@ -266,56 +366,100 @@ main :: proc () {
 WindowData :: struct {
 	mui_ctx: ^mui.Context,
 	size: [2]i32,
-	ui_rect_pipeline: ^SDL.GPUGraphicsPipeline,
 }
 
-draw_mui :: proc(window: ^WindowData, cmd_buf: ^SDL.GPUCommandBuffer, render_pass: ^SDL.GPURenderPass) {
+DrawContext :: struct {
+	cmd_buf: ^SDL.GPUCommandBuffer,
+	render_pass: ^SDL.GPURenderPass,
+	sampler_bindings: [1]SDL.GPUTextureSamplerBinding,
+	ui_rect_pipeline: ^SDL.GPUGraphicsPipeline,
+	ui_rect_tex_pipeline: ^SDL.GPUGraphicsPipeline,
+}
+
+draw_mui :: proc(window: ^WindowData, draw_ctx: ^DrawContext) {
 
 	mui_ctx: ^mui.Context = window.mui_ctx
 	mui_cmd: ^mui.Command
 
+
+	VertexUniformData :: struct {
+		vp_size: [4]f32,
+		rect: [4]f32,
+		region: [4]f32
+	}
+
+	window_draw_rect :: proc (window: ^WindowData, draw_ctx: ^DrawContext, in_rect: mui.Rect, in_color: mui.Color) {
+
+		rect := [4]f32{f32(in_rect.x), f32(in_rect.y), f32(in_rect.w), f32(in_rect.h)}
+		color := [4]f32{f32(in_color.r)/255, f32(in_color.g)/255, f32(in_color.b)/255, f32(in_color.a) / 255}
+
+		vert_uniform_data := VertexUniformData {
+			vp_size = {f32 (window.size.x), f32 (window.size.y), 0, 0},
+			rect = rect,
+		}
+		SDL.PushGPUVertexUniformData(draw_ctx.cmd_buf, 0, &vert_uniform_data, size_of(vert_uniform_data))
+		
+		SDL.PushGPUFragmentUniformData(draw_ctx.cmd_buf, 0, &color, size_of(color))
+
+		SDL.BindGPUGraphicsPipeline(draw_ctx.render_pass, draw_ctx.ui_rect_pipeline)
+		SDL.DrawGPUPrimitives(draw_ctx.render_pass, 4, 1, 0, 0)
+	}
+
+	
+	window_draw_textured_rect :: proc (window: ^WindowData, draw_ctx: ^DrawContext, in_rect: mui.Rect, in_color: mui.Color, atlas_region: mui.Rect) {
+
+		rect := [4]f32{f32(in_rect.x), f32(in_rect.y), f32(in_rect.w), f32(in_rect.h)}
+		color := [4]f32{f32(in_color.r)/255, f32(in_color.g)/255, f32(in_color.b)/255, f32(in_color.a) / 255}
+		region := [4]f32{f32(atlas_region.x)/128, f32(atlas_region.y)/128, f32(atlas_region.w)/128, f32(atlas_region.h) / 128}
+		// region := [4]f32{0, 0, 1, 1}
+
+		vert_uniform_data := VertexUniformData {
+			vp_size = {f32 (window.size.x), f32 (window.size.y), 0, 0},
+			rect = rect,
+			region = region,
+		}
+		SDL.PushGPUVertexUniformData(draw_ctx.cmd_buf, 0, &vert_uniform_data, size_of(vert_uniform_data))
+		
+		SDL.PushGPUFragmentUniformData(draw_ctx.cmd_buf, 0, &color, size_of(color))
+
+		SDL.BindGPUGraphicsPipeline(draw_ctx.render_pass, draw_ctx.ui_rect_tex_pipeline)
+		SDL.BindGPUFragmentSamplers(draw_ctx.render_pass, 0, &draw_ctx.sampler_bindings[0], len(draw_ctx.sampler_bindings))
+
+		SDL.DrawGPUPrimitives(draw_ctx.render_pass, 4, 1, 0, 0)
+	}
+
 	for mui.next_command(mui_ctx, &mui_cmd) {
-		#partial switch e in mui_cmd.variant {
+		switch e in mui_cmd.variant {
 		case ^mui.Command_Jump: fmt.println("Command_Jump")
-		case ^mui.Command_Clip: fmt.println("Command_Clip")
+		case ^mui.Command_Clip:
+			sdl_rect := SDL.Rect {e.rect.x, e.rect.y, e.rect.w, e.rect.h}
+			SDL.SetGPUScissor(draw_ctx.render_pass, sdl_rect)
 		case ^mui.Command_Rect: 
-			rect := &e.rect
-			VertexUniformData :: struct {
-				vp_size: [4]f32,
-				rect: [4]f32,
-			}
-			vert_uniform_data := VertexUniformData {
-				vp_size = {f32 (window.size.x), f32 (window.size.y), 0, 0},
-				rect = {f32(rect.x), f32(rect.y), f32(rect.w), f32(rect.h)},
-			}
-			SDL.PushGPUVertexUniformData(cmd_buf, 0, &vert_uniform_data, size_of(vert_uniform_data))
-			
-			color := &e.color
-			frag_color := [4]f32 {f32(color.r)/255, f32(color.g)/255, f32(color.b)/255, f32(color.a) / 255}
-			SDL.PushGPUFragmentUniformData(cmd_buf, 0, &frag_color, size_of(frag_color))
-
-			SDL.BindGPUGraphicsPipeline(render_pass, window.ui_rect_pipeline)
-			SDL.DrawGPUPrimitives(render_pass, 4, 1, 0, 0)
-		// case ^mui.Command_Text: fmt.println("Command_Text")
+			window_draw_rect(window, draw_ctx, e.rect, e.color)
 		case ^mui.Command_Icon:
+			icon := e.id
+			atlas_rect := mui.default_atlas[icon]
+			window_draw_textured_rect(window, draw_ctx, e.rect, e.color, atlas_rect)
 
-			rect := &e.rect
-			VertexUniformData :: struct {
-				vp_size: [4]f32,
-				rect: [4]f32,
-			}
-			vert_uniform_data := VertexUniformData {
-				vp_size = {f32 (window.size.x), f32 (window.size.y), 0, 0},
-				rect = {f32(rect.x), f32(rect.y), f32(rect.w), f32(rect.h)},
-			}
-			SDL.PushGPUVertexUniformData(cmd_buf, 0, &vert_uniform_data, size_of(vert_uniform_data))
-			
-			color := &e.color
-			frag_color := [4]f32 {f32(color.r)/255, f32(color.g)/255, f32(color.b)/255, f32(color.a) / 255}
-			SDL.PushGPUFragmentUniformData(cmd_buf, 0, &frag_color, size_of(frag_color))
 
-			SDL.BindGPUGraphicsPipeline(render_pass, window.ui_rect_pipeline)
-			SDL.DrawGPUPrimitives(render_pass, 4, 1, 0, 0)
+		case ^mui.Command_Text: 
+			// Command_Text :: struct { 
+			// 	using command: Command, 
+			// 	font:  Font, 
+			// 	pos:   Vec2, 
+			// 	color: Color, 
+			// 	str:   string, /* + string data (VLA) */ 
+			// }
+			text := e.str
+			current_pos := e.pos
+			atlas := mui.default_atlas
+			for idx in 0 ..< len(text) {
+				char := text[idx]
+				atlas_rect := atlas[u8(mui.DEFAULT_ATLAS_FONT) + char]
+				rect: mui.Rect = {current_pos.x, current_pos.y, atlas_rect.w, atlas_rect.h}
+				current_pos.x += atlas_rect.w
+				window_draw_textured_rect(window, draw_ctx, rect, e.color, atlas_rect)
+			}
 		}
 	}
 }
