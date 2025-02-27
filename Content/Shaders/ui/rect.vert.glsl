@@ -12,25 +12,9 @@ void main() {
 	// Get the vertex index automatically, equivalent to 'SV_VertexID' in HLSL
 	uint vert_idx = gl_VertexIndex;
 
-
 	// Declare a vec4 to hold the final position
 	vec4 position;
 
-	// Calculate the position based on the vertex index
-	// if (vert_idx == 0) {
-
-	// 	position.xy = vec2(-0.2, -0.2);
-	// }
-	// else if (vert_idx == 1) {
-	// 	position.xy = vec2(-0.2, 0.2);
-	// }
-	// else if (vert_idx == 2) {
-	// 	position.xy = vec2(0.2, -0.2);
-	// }
-	// else if (vert_idx == 3) {
-	// 	position.xy = vec2(0.2, 0.2);
-	// }
-	// float pos_x = -0.5;
 	float pos_x = rect.x / size.x * 2.0 - 0.5;
 	float size_x = rect.z / size.x * 2.0;
 
