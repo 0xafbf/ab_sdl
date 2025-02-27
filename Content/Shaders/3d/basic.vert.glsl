@@ -10,7 +10,7 @@ layout(set = 1, binding = 0) uniform View {
 	mat4 projection;
 };
 
-layout(set = 1, binding = 2) uniform Model {
+layout(set = 1, binding = 1) uniform Model {
 	mat4 model;
 };
 

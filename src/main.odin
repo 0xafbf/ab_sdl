@@ -55,38 +55,85 @@ main :: proc () {
 	ui_load_pipelines(&window, gpu_device)
 	defer ui_unload_pipelines(&window, gpu_device)
 
-	shader_vert := LoadShader(gpu_device, "Content/Shaders/Compiled/SPIRV/RawTriangle.vert.spv", .VERTEX)
-	shader_frag := LoadShader(gpu_device, "Content/Shaders/Compiled/SPIRV/SolidColor.frag.spv", .FRAGMENT)
-	assert(shader_vert != nil)
-	assert(shader_frag != nil)
+	pipeline: ^SDL.GPUGraphicsPipeline
+	{
+		shader_vert := LoadShader(gpu_device, "Content/Shaders/Compiled/SPIRV/RawTriangle.vert.spv", .VERTEX)
 
-	color_target_desc := []SDL.GPUColorTargetDescription{{
-		format = window.format
-	}}
+		shader_frag := LoadShader(gpu_device, "Content/Shaders/Compiled/SPIRV/SolidColor.frag.spv", .FRAGMENT)
+		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
+		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
+		color_target_desc := []SDL.GPUColorTargetDescription{{
+			format = window.format
+		}}
 
-	pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
-		vertex_shader = shader_vert,
-		fragment_shader = shader_frag,
-		// vertex_input_state:  GPUVertexInputState,            /**< The vertex layout of the graphics pipeline. */
-		primitive_type = .TRIANGLELIST,
-		// rasterizer_state:    GPURasterizerState,             /**< The rasterizer state of the graphics pipeline. */
-		// multisample_state:   GPUMultisampleState,            /**< The multisample state of the graphics pipeline. */
-		// depth_stencil_state: GPUDepthStencilState,           /**< The depth-stencil state of the graphics pipeline. */
-		// target_info:         GPUGraphicsPipelineTargetInfo,  /**< Formats and blend modes for the render targets of the graphics pipeline. */
-		target_info = {
-			num_color_targets = 1,
-			color_target_descriptions = raw_data(color_target_desc),
-		},
+		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
+			vertex_shader = shader_vert,
+			fragment_shader = shader_frag,
+			// vertex_input_state:  GPUVertexInputState,            /**< The vertex layout of the graphics pipeline. */
+			primitive_type = .TRIANGLELIST,
+			// rasterizer_state:    GPURasterizerState,             /**< The rasterizer state of the graphics pipeline. */
+			// multisample_state:   GPUMultisampleState,            /**< The multisample state of the graphics pipeline. */
+			// depth_stencil_state: GPUDepthStencilState,           /**< The depth-stencil state of the graphics pipeline. */
+			// target_info:         GPUGraphicsPipelineTargetInfo,  /**< Formats and blend modes for the render targets of the graphics pipeline. */
+			target_info = {
+				num_color_targets = 1,
+				color_target_descriptions = raw_data(color_target_desc),
+			},
+		}
+
+		pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
 	}
-
-	pipeline_info.rasterizer_state.fill_mode = .FILL 
-	// pipeline_info.rasterizer_state.fill_mode = .LINE
-
-	pipeline := SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
 	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, pipeline)
-	assert(pipeline != nil) 
-	SDL.ReleaseGPUShader(gpu_device, shader_vert)
-	SDL.ReleaseGPUShader(gpu_device, shader_frag)
+
+
+	mesh_pipeline: ^SDL.GPUGraphicsPipeline
+	{
+		fmt.println("loading vertex shader")
+		fmt.println("loading vertex shader")
+		fmt.println("loading vertex shader")
+		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/basic.vert.spv", .VERTEX, 0, 0, 0, 2)
+		fmt.println("loading frag shader")
+		fmt.println("loading frag shader")
+		fmt.println("loading frag shader")
+		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/basic.frag.spv", .FRAGMENT, 1, 0, 0, 0)
+		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
+		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
+		color_target_desc := []SDL.GPUColorTargetDescription{{
+			format = window.format
+		}}
+
+		vertex_buffer_descriptions := []SDL.GPUVertexBufferDescription {
+			{slot=0, pitch=12}, 
+			{slot=1, pitch=8},
+		}
+		vertex_attributes := []SDL.GPUVertexAttribute {
+			{location = 0, buffer_slot = 0, format = .FLOAT3},
+			{location = 1, buffer_slot = 1, format = .FLOAT2},
+		}
+
+		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
+			vertex_shader = shader_vert,
+			fragment_shader = shader_frag,
+			// vertex_input_state:  GPUVertexInputState,            /**< The vertex layout of the graphics pipeline. */
+			vertex_input_state = {
+				&vertex_buffer_descriptions[0], u32(len(vertex_buffer_descriptions)),
+				&vertex_attributes[0], u32(len(vertex_attributes)),
+			},
+			// primitive_type = .TRIANGLELIST,
+			// rasterizer_state:    GPURasterizerState,             /**< The rasterizer state of the graphics pipeline. */
+			// multisample_state:   GPUMultisampleState,            /**< The multisample state of the graphics pipeline. */
+			// depth_stencil_state: GPUDepthStencilState,           /**< The depth-stencil state of the graphics pipeline. */
+			// target_info:         GPUGraphicsPipelineTargetInfo,  /**< Formats and blend modes for the render targets of the graphics pipeline. */
+			target_info = {
+				num_color_targets = 1,
+				color_target_descriptions = raw_data(color_target_desc),
+			},
+		}
+
+		mesh_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
+	}
+	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, mesh_pipeline)
+
 
 
 	window.mui_ctx = new(mui.Context)
@@ -111,6 +158,32 @@ main :: proc () {
 
 	positions: []hlm.float3
 	texcoords: []hlm.float2
+	indices: []u32
+
+	// positions = {
+	// 	{-1, -1, -1},
+	// 	{-1, -1,  1},
+	// 	{-1,  1, -1},
+	// 	{-1,  1,  1},
+	// 	{ 1, -1, -1},
+	// 	{ 1, -1,  1},
+	// 	{ 1,  1, -1},
+	// 	{ 1,  1,  1},
+	// }
+	// texcoords = {
+	// 	{0,0},
+	// 	{0,0},
+	// 	{0,0},
+	// 	{0,0},
+	// 	{0,0},
+	// 	{0,0},
+	// 	{0,0},
+	// 	{0,0},
+	// }
+	// indices = {
+	// 	0, 1, 2
+	// }
+
 
 	scene := helmet.scene
 	fmt.println("nodes ", len(scene.nodes))
@@ -137,7 +210,67 @@ main :: proc () {
 				fmt.println("unpack floats ", num_floats)
 			}
 		}
+
+		indices = make([]u32, primitive.indices.count)
+		num_indices := cgltf.accessor_unpack_indices(primitive.indices, nil, 4, 0)
+		assert(len(indices) == int(num_indices))
+		num_indices = cgltf.accessor_unpack_indices(primitive.indices, &indices[0], 4, num_indices)
 	}
+
+	MeshBuffer :: struct {
+		size: u32,
+		gpu_buffer: ^SDL.GPUBuffer,
+		transfer_buffer: ^SDL.GPUTransferBuffer,
+	}
+
+	meshbuffer_create :: proc (gpu: ^SDL.GPUDevice, field: []$T, usage: SDL.GPUBufferUsageFlags) -> MeshBuffer {
+		buf: MeshBuffer
+		buf.size = u32(len(field) * size_of(T))
+		buf.gpu_buffer = SDL.CreateGPUBuffer(gpu, {
+			usage = usage,
+			size = buf.size
+		})
+		buf.transfer_buffer = SDL.CreateGPUTransferBuffer(gpu, {
+			usage = .UPLOAD,
+			size = buf.size
+		})
+
+		transfer_buffer_mem := SDL.MapGPUTransferBuffer(gpu, buf.transfer_buffer, cycle = false)
+		mem.copy_non_overlapping(transfer_buffer_mem, &field[0], int(buf.size))
+		SDL.UnmapGPUTransferBuffer(gpu, buf.transfer_buffer)
+		return buf
+	}
+
+	meshbuffer_upload :: proc(buf: MeshBuffer, copy_pass: ^SDL.GPUCopyPass) {
+		SDL.UploadToGPUBuffer(copy_pass, 
+			{buf.transfer_buffer, 0},
+			{buf.gpu_buffer, 0, buf.size},
+			cycle = false,
+		)
+	}
+
+	meshbuffer_destroy :: proc(gpu: ^SDL.GPUDevice, buf: MeshBuffer) {
+		SDL.ReleaseGPUBuffer(gpu, buf.gpu_buffer)
+		SDL.ReleaseGPUTransferBuffer(gpu, buf.transfer_buffer)
+	}
+
+	buf_mesh_pos := meshbuffer_create(gpu_device, positions, {.VERTEX})
+	buf_mesh_uv := meshbuffer_create(gpu_device, texcoords, {.VERTEX})
+	buf_mesh_idx := meshbuffer_create(gpu_device, indices, {.INDEX})
+	defer meshbuffer_destroy(gpu_device, buf_mesh_pos)
+	defer meshbuffer_destroy(gpu_device, buf_mesh_uv)
+	defer meshbuffer_destroy(gpu_device, buf_mesh_idx)
+
+	copied := false
+
+	// copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
+	// copy_pass := SDL.BeginGPUCopyPass(copy_cmd_buf)
+	// meshbuffer_upload(buf_mesh_pos, copy_pass)
+	// meshbuffer_upload(buf_mesh_uv, copy_pass)
+	// meshbuffer_upload(buf_mesh_idx, copy_pass)
+	// SDL.EndGPUCopyPass(copy_pass)
+	// copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
+
 
 	pitch := f32(math.TAU / 12)
 	yaw := f32(math.TAU / 8)
@@ -162,9 +295,11 @@ main :: proc () {
 	aspect := 16.0/9.0
 	near := 0.1
 	far := 100.0
-	view_mat := linalg.matrix4_perspective_f64(fovy, aspect, near, far)
+	proj_mat := linalg.matrix4_perspective_f32(f32(fovy), f32(aspect), f32(near), f32(far))
 
-	model_mat : matrix[4,4]f32 = 1
+	model_scale : f32 = 1
+
+
 
 
 	bool_value: bool = false
@@ -198,12 +333,24 @@ main :: proc () {
 		if mui.window(window.mui_ctx, "window", {100, 100, 400, 300}) {
 			mui.label(window.mui_ctx, "My Label")
 			mui.checkbox(window.mui_ctx, "My Checkbox", &bool_value)
-			mui.number(window.mui_ctx, &my_color.x, 1.0/255)
+			mui.number(window.mui_ctx, &model_scale, 1.0/255)
 		}
 		mui.end(window.mui_ctx)
 
 
 		cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
+
+		if !copied {
+			copy_pass := SDL.BeginGPUCopyPass(cmd_buf)
+			meshbuffer_upload(buf_mesh_pos, copy_pass)
+			meshbuffer_upload(buf_mesh_uv, copy_pass)
+			meshbuffer_upload(buf_mesh_idx, copy_pass)
+			SDL.EndGPUCopyPass(copy_pass)
+			copied = true
+		}
+
+
+
 		swapchain_tex: ^SDL.GPUTexture
 		gotit := SDL.WaitAndAcquireGPUSwapchainTexture(cmd_buf, sdl_window, &swapchain_tex, nil, nil)
 		assert(gotit)
@@ -216,10 +363,42 @@ main :: proc () {
 			store_op = .STORE,
 		}
 
+
 		render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info, 1, nil)
 		SDL.BindGPUGraphicsPipeline(render_pass, pipeline)
 		SDL.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
-		SDL.EndGPURenderPass(render_pass)
+
+		// SDL.EndGPURenderPass(render_pass)
+		// mesh_render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info, 1, nil)
+		mesh_render_pass := render_pass
+
+		bindings := []SDL.GPUBufferBinding{
+			{ buffer = buf_mesh_pos.gpu_buffer, offset = 0 },
+			{ buffer = buf_mesh_uv.gpu_buffer, offset = 0 },
+		}
+
+		SDL.BindGPUGraphicsPipeline(mesh_render_pass, mesh_pipeline)
+		SDL.BindGPUVertexBuffers(mesh_render_pass, 0, &bindings[0], u32(len(bindings)))
+		SDL.BindGPUIndexBuffer(mesh_render_pass, {buf_mesh_idx.gpu_buffer, 0}, ._32BIT)
+
+		uniform0 := [2]f32m4 {cam_mat, proj_mat}
+		model_mat : matrix[4,4]f32 = model_scale
+		model_mat[3,3] = 1
+		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
+		SDL.PushGPUVertexUniformData(cmd_buf, 1, &model_mat, size_of(model_mat))
+
+		sampler_bindings := []SDL.GPUTextureSamplerBinding {
+			{
+				texture = window.ui_texture,
+				sampler = window.ui_sampler,
+			}
+		}
+		SDL.BindGPUFragmentSamplers(mesh_render_pass, 0, &sampler_bindings[0], u32(len(sampler_bindings)))
+
+		SDL.DrawGPUPrimitives(mesh_render_pass, u32(len(indices)), 1, 0, 0)
+		// SDL.DrawGPUPrimitives(mesh_render_pass, 12, 1, 0, 0)
+		SDL.EndGPURenderPass(mesh_render_pass)
+
 
 
 		draw_ctx := DrawContext {gpu_device, cmd_buf, swapchain_tex, nil}
