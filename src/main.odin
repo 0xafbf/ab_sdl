@@ -38,7 +38,7 @@ main :: proc () {
 		size = {800, 600},
 	}
 
-	sdl_window := SDL.CreateWindow("My App", window.size.x, window.size.y, window_flags);
+	sdl_window := SDL.CreateWindow("My App", i32(window.size.x), i32(window.size.y), window_flags);
 	if sdl_window == nil {
 		fmt.println("failed to create sdl_window")
 		return
@@ -111,6 +111,13 @@ main :: proc () {
 			{location = 1, buffer_slot = 1, format = .FLOAT2},
 		}
 
+		depth_stencil_state := SDL.GPUDepthStencilState {
+			compare_op = .LESS_OR_EQUAL,
+			enable_depth_test = true,
+			enable_depth_write = true,
+		}
+
+
 		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
 			vertex_shader = shader_vert,
 			fragment_shader = shader_frag,
@@ -122,11 +129,13 @@ main :: proc () {
 			// primitive_type = .TRIANGLELIST,
 			// rasterizer_state:    GPURasterizerState,             /**< The rasterizer state of the graphics pipeline. */
 			// multisample_state:   GPUMultisampleState,            /**< The multisample state of the graphics pipeline. */
-			// depth_stencil_state: GPUDepthStencilState,           /**< The depth-stencil state of the graphics pipeline. */
+			depth_stencil_state = depth_stencil_state,
 			// target_info:         GPUGraphicsPipelineTargetInfo,  /**< Formats and blend modes for the render targets of the graphics pipeline. */
 			target_info = {
 				num_color_targets = 1,
 				color_target_descriptions = raw_data(color_target_desc),
+				depth_stencil_format = .D32_FLOAT,
+				has_depth_stencil_target = true,
 			},
 		}
 
@@ -181,7 +190,7 @@ main :: proc () {
 	// 	{0,0},
 	// }
 	// indices = {
-	// 	0, 1, 2
+	// 	0, 1, 2, 2, 3, 1,
 	// }
 
 
@@ -275,31 +284,21 @@ main :: proc () {
 	pitch := f32(math.TAU / 12)
 	yaw := f32(math.TAU / 8)
 	distance := f32(5.0)
-
-	cam_pos := [3]f32 {
-		math.cos(pitch) * math.cos(yaw),
-		math.cos(pitch) * math.sin(yaw),
-		math.sin(pitch),
-	}
-	cam_fwd := linalg.normalize(-cam_pos)
-	cam_pos *= distance
-	cam_up := [3]f32{0, 0, 1}
-	cam_left := linalg.normalize(linalg.cross(cam_up, cam_fwd))
-	cam_up = linalg.cross(cam_fwd, cam_left)
-
 	f32m4 :: matrix[4, 4]f32
 
-	cam_mat := linalg.matrix4_look_at(cam_pos, [3]f32{}, [3]f32{0, 1, 0})
 
-	fovy := math.to_radians(f64(90.0))
-	aspect := 16.0/9.0
-	near := 0.1
-	far := 100.0
-	proj_mat := linalg.matrix4_perspective_f32(f32(fovy), f32(aspect), f32(near), f32(far))
-
-	model_scale : f32 = 1
-
-
+	tex_depth := SDL.CreateGPUTexture(gpu_device, {
+		type = .D2,
+		format = .D32_FLOAT,
+		usage = {.DEPTH_STENCIL_TARGET},
+		width = window.size.x,
+		height = window.size.y,
+		layer_count_or_depth = 1,
+		num_levels = 1,
+		//sample_count = ._1 GPUSampleCount,  /**< The number of samples per texel. Only applies if the texture is used as a render target. */
+		//props:                PropertiesID,          /**< A properties ID for extensions. Should be 0 if no extensions are needed. */
+	})
+	defer SDL.ReleaseGPUTexture(gpu_device, tex_depth)
 
 
 	bool_value: bool = false
@@ -315,7 +314,21 @@ main :: proc () {
 				continue
 			} else if sdl_event.type == .WINDOW_RESIZED {
 				window_event := sdl_event.window
-				window.size = {window_event.data1, window_event.data2}
+				window.size = {u32(window_event.data1), u32(window_event.data2)}
+
+				SDL.ReleaseGPUTexture(gpu_device, tex_depth)
+				tex_depth = SDL.CreateGPUTexture(gpu_device, {
+					type = .D2,
+					format = .D32_FLOAT,
+					usage = {.DEPTH_STENCIL_TARGET},
+					width = window.size.x,
+					height = window.size.y,
+					layer_count_or_depth = 1,
+					num_levels = 1,
+					//sample_count = ._1 GPUSampleCount,  /**< The number of samples per texel. Only applies if the texture is used as a render target. */
+					//props:                PropertiesID,          /**< A properties ID for extensions. Should be 0 if no extensions are needed. */
+				})
+
 				continue
 			}
 			mui_process_sdl_event(window.mui_ctx, sdl_event)
@@ -331,9 +344,14 @@ main :: proc () {
 		mui.begin(window.mui_ctx)
 
 		if mui.window(window.mui_ctx, "window", {100, 100, 400, 300}) {
-			mui.label(window.mui_ctx, "My Label")
 			mui.checkbox(window.mui_ctx, "My Checkbox", &bool_value)
-			mui.number(window.mui_ctx, &model_scale, 1.0/255)
+			mui.label(window.mui_ctx, "Distance")
+			mui.number(window.mui_ctx, &distance, 1.0/255)
+			mui.label(window.mui_ctx, "Pitch")
+			mui.number(window.mui_ctx, &pitch, 1.0/255)
+			mui.label(window.mui_ctx, "Yaw")
+			mui.number(window.mui_ctx, &yaw, 1.0/255)
+
 		}
 		mui.end(window.mui_ctx)
 
@@ -350,7 +368,6 @@ main :: proc () {
 		}
 
 
-
 		swapchain_tex: ^SDL.GPUTexture
 		gotit := SDL.WaitAndAcquireGPUSwapchainTexture(cmd_buf, sdl_window, &swapchain_tex, nil, nil)
 		assert(gotit)
@@ -363,14 +380,38 @@ main :: proc () {
 			store_op = .STORE,
 		}
 
-
 		render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info, 1, nil)
 		SDL.BindGPUGraphicsPipeline(render_pass, pipeline)
 		SDL.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
 
-		// SDL.EndGPURenderPass(render_pass)
-		// mesh_render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info, 1, nil)
-		mesh_render_pass := render_pass
+		SDL.EndGPURenderPass(render_pass)
+
+		color_target_info_3d := SDL.GPUColorTargetInfo {
+			texture = swapchain_tex,
+			load_op = .LOAD,
+			store_op = .STORE,
+		}
+
+		depth_target_info := SDL.GPUDepthStencilTargetInfo {
+			texture = tex_depth,
+			// texture:          ^GPUTexture,  /**< The texture that will be used as the depth stencil target by the render pass. */
+			clear_depth = 1,
+			// clear_depth:      f32,          /**< The value to clear the depth component to at the beginning of the render pass. Ignored if GPU_LOADOP_CLEAR is not used. */
+			load_op = .CLEAR,
+			// load_op:          GPULoadOp,    /**< What is done with the depth contents at the beginning of the render pass. */
+			store_op = .STORE,
+			// store_op:         GPUStoreOp,   /**< What is done with the depth results of the render pass. */
+			// stencil_load_op = .CLEAR,
+			// stencil_store_op = .STORE,
+			cycle = false,
+			// clear_stencil = 0
+		}
+
+
+
+		mesh_render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info_3d, 1, &depth_target_info)
+
+		SDL.SetGPUViewport(mesh_render_pass, {0, 0, f32(window.size.x), f32(window.size.y), 0, 1})
 
 		bindings := []SDL.GPUBufferBinding{
 			{ buffer = buf_mesh_pos.gpu_buffer, offset = 0 },
@@ -380,6 +421,30 @@ main :: proc () {
 		SDL.BindGPUGraphicsPipeline(mesh_render_pass, mesh_pipeline)
 		SDL.BindGPUVertexBuffers(mesh_render_pass, 0, &bindings[0], u32(len(bindings)))
 		SDL.BindGPUIndexBuffer(mesh_render_pass, {buf_mesh_idx.gpu_buffer, 0}, ._32BIT)
+
+
+
+		cam_pos := [3]f32 {
+			math.cos(pitch) * math.cos(yaw),
+			math.sin(pitch),
+			math.cos(pitch) * math.sin(yaw),
+		}
+		cam_fwd := linalg.normalize(-cam_pos)
+		cam_pos *= distance
+		cam_up := [3]f32{0, 0, 1}
+		cam_left := linalg.normalize(linalg.cross(cam_up, cam_fwd))
+		cam_up = linalg.cross(cam_fwd, cam_left)
+
+
+		cam_mat := linalg.matrix4_look_at(cam_pos, [3]f32{}, [3]f32{0, 1, 0})
+
+		fovy := math.to_radians(f64(90.0))
+		aspect := f32(window.size.x) / f32(window.size.y)
+		near := 0.1
+		far := 100.0
+		proj_mat := linalg.matrix4_perspective_f32(f32(fovy), f32(aspect), f32(near), f32(far))
+
+		model_scale : f32 = 1
 
 		uniform0 := [2]f32m4 {cam_mat, proj_mat}
 		model_mat : matrix[4,4]f32 = model_scale
@@ -395,7 +460,8 @@ main :: proc () {
 		}
 		SDL.BindGPUFragmentSamplers(mesh_render_pass, 0, &sampler_bindings[0], u32(len(sampler_bindings)))
 
-		SDL.DrawGPUPrimitives(mesh_render_pass, u32(len(indices)), 1, 0, 0)
+		// SDL.DrawGPUPrimitives(mesh_render_pass, u32(len(indices)), 1, 0, 0)
+		SDL.DrawGPUIndexedPrimitives(mesh_render_pass, u32(len(indices)), 1, 0, 0, 0)
 		// SDL.DrawGPUPrimitives(mesh_render_pass, 12, 1, 0, 0)
 		SDL.EndGPURenderPass(mesh_render_pass)
 

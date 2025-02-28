@@ -14,7 +14,7 @@ import "core:mem"
 
 WindowData :: struct {
 	mui_ctx: ^mui.Context,
-	size: [2]i32,
+	size: [2]u32,
 	format: SDL.GPUTextureFormat,
 	ui_rect_pipeline: ^SDL.GPUGraphicsPipeline,
 	ui_rect_tex_pipeline: ^SDL.GPUGraphicsPipeline,
