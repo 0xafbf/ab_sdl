@@ -2,8 +2,7 @@
 package main
 
 import SDL "vendor:sdl3"
-// import SDL2 "vendor:sdl2"
-// import IMG "vendor:sdl2/image"
+import IMG "vendor:sdl3/image"
 import mui "vendor:microui"
 import "vendor:cgltf"
 
@@ -159,9 +158,7 @@ main :: proc () {
 	rgba_u8 :: [4]u8
 	rgb_u8 :: [3]u8
 	rg_u8 :: [2]u8
-	base_color: []rgba_u8
-	metallic_roughness: []rg_u8
-
+	base_color: ^SDL.Surface
 
 	scene := helmet.scene
 	fmt.println("nodes ", len(scene.nodes))
@@ -206,49 +203,14 @@ main :: proc () {
 			img_buffer := img_buffer_view.buffer
 			fmt.println(img_buffer)
 
-			img_rw := SDL2.RWFromConstMem(img_buffer.data, img_buffer.size)
-			surface := IMG.Load_RW(img_rw)
-
-			fmt.println(surface)
+			data_ptr := ([^]u8)(img_buffer.data)
+			img_io := SDL.IOFromConstMem(&data_ptr[img_buffer_view.offset], img_buffer_view.size)
+			base_color = IMG.Load_IO(img_io, false)
 		}
 	}
 
-	MeshBuffer :: struct {
-		size: u32,
-		gpu_buffer: ^SDL.GPUBuffer,
-		transfer_buffer: ^SDL.GPUTransferBuffer,
-	}
+	base_color_tex := ab_create_texture(gpu_device, base_color)
 
-	meshbuffer_create :: proc (gpu: ^SDL.GPUDevice, field: []$T, usage: SDL.GPUBufferUsageFlags) -> MeshBuffer {
-		buf: MeshBuffer
-		buf.size = u32(len(field) * size_of(T))
-		buf.gpu_buffer = SDL.CreateGPUBuffer(gpu, {
-			usage = usage,
-			size = buf.size
-		})
-		buf.transfer_buffer = SDL.CreateGPUTransferBuffer(gpu, {
-			usage = .UPLOAD,
-			size = buf.size
-		})
-
-		transfer_buffer_mem := SDL.MapGPUTransferBuffer(gpu, buf.transfer_buffer, cycle = false)
-		mem.copy_non_overlapping(transfer_buffer_mem, &field[0], int(buf.size))
-		SDL.UnmapGPUTransferBuffer(gpu, buf.transfer_buffer)
-		return buf
-	}
-
-	meshbuffer_upload :: proc(buf: MeshBuffer, copy_pass: ^SDL.GPUCopyPass) {
-		SDL.UploadToGPUBuffer(copy_pass, 
-			{buf.transfer_buffer, 0},
-			{buf.gpu_buffer, 0, buf.size},
-			cycle = false,
-		)
-	}
-
-	meshbuffer_destroy :: proc(gpu: ^SDL.GPUDevice, buf: MeshBuffer) {
-		SDL.ReleaseGPUBuffer(gpu, buf.gpu_buffer)
-		SDL.ReleaseGPUTransferBuffer(gpu, buf.transfer_buffer)
-	}
 
 	buf_mesh_pos := meshbuffer_create(gpu_device, positions, {.VERTEX})
 	buf_mesh_uv := meshbuffer_create(gpu_device, texcoords, {.VERTEX})
@@ -259,13 +221,14 @@ main :: proc () {
 
 	copied := false
 
-	// copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
-	// copy_pass := SDL.BeginGPUCopyPass(copy_cmd_buf)
-	// meshbuffer_upload(buf_mesh_pos, copy_pass)
-	// meshbuffer_upload(buf_mesh_uv, copy_pass)
-	// meshbuffer_upload(buf_mesh_idx, copy_pass)
-	// SDL.EndGPUCopyPass(copy_pass)
-	// copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
+	copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
+	copy_pass := SDL.BeginGPUCopyPass(copy_cmd_buf)
+	ab_texture_upload(base_color_tex, copy_pass)
+	meshbuffer_upload(buf_mesh_pos, copy_pass)
+	meshbuffer_upload(buf_mesh_uv, copy_pass)
+	meshbuffer_upload(buf_mesh_idx, copy_pass)
+	SDL.EndGPUCopyPass(copy_pass)
+	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
 
 
 	pitch := f32(math.TAU / 12)
@@ -344,16 +307,6 @@ main :: proc () {
 
 
 		cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
-
-		if !copied {
-			copy_pass := SDL.BeginGPUCopyPass(cmd_buf)
-			meshbuffer_upload(buf_mesh_pos, copy_pass)
-			meshbuffer_upload(buf_mesh_uv, copy_pass)
-			meshbuffer_upload(buf_mesh_idx, copy_pass)
-			SDL.EndGPUCopyPass(copy_pass)
-			copied = true
-		}
-
 
 		swapchain_tex: ^SDL.GPUTexture
 		gotit := SDL.WaitAndAcquireGPUSwapchainTexture(cmd_buf, sdl_window, &swapchain_tex, nil, nil)
@@ -441,7 +394,7 @@ main :: proc () {
 
 		sampler_bindings := []SDL.GPUTextureSamplerBinding {
 			{
-				texture = window.ui_texture,
+				texture = base_color_tex.texture,
 				sampler = window.ui_sampler,
 			}
 		}
