@@ -2,6 +2,8 @@
 package main
 
 import SDL "vendor:sdl3"
+// import SDL2 "vendor:sdl2"
+// import IMG "vendor:sdl2/image"
 import mui "vendor:microui"
 import "vendor:cgltf"
 
@@ -69,12 +71,6 @@ main :: proc () {
 		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
 			vertex_shader = shader_vert,
 			fragment_shader = shader_frag,
-			// vertex_input_state:  GPUVertexInputState,            /**< The vertex layout of the graphics pipeline. */
-			primitive_type = .TRIANGLELIST,
-			// rasterizer_state:    GPURasterizerState,             /**< The rasterizer state of the graphics pipeline. */
-			// multisample_state:   GPUMultisampleState,            /**< The multisample state of the graphics pipeline. */
-			// depth_stencil_state: GPUDepthStencilState,           /**< The depth-stencil state of the graphics pipeline. */
-			// target_info:         GPUGraphicsPipelineTargetInfo,  /**< Formats and blend modes for the render targets of the graphics pipeline. */
 			target_info = {
 				num_color_targets = 1,
 				color_target_descriptions = raw_data(color_target_desc),
@@ -111,27 +107,19 @@ main :: proc () {
 			{location = 1, buffer_slot = 1, format = .FLOAT2},
 		}
 
-		depth_stencil_state := SDL.GPUDepthStencilState {
-			compare_op = .LESS_OR_EQUAL,
-			enable_depth_test = true,
-			enable_depth_write = true,
-		}
-
-
 		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
 			vertex_shader = shader_vert,
 			fragment_shader = shader_frag,
-			// vertex_input_state:  GPUVertexInputState,            /**< The vertex layout of the graphics pipeline. */
 			vertex_input_state = {
 				&vertex_buffer_descriptions[0], u32(len(vertex_buffer_descriptions)),
 				&vertex_attributes[0], u32(len(vertex_attributes)),
 			},
-			// primitive_type = .TRIANGLELIST,
-			// rasterizer_state:    GPURasterizerState,             /**< The rasterizer state of the graphics pipeline. */
-			// multisample_state:   GPUMultisampleState,            /**< The multisample state of the graphics pipeline. */
-			depth_stencil_state = depth_stencil_state,
-			// target_info:         GPUGraphicsPipelineTargetInfo,  /**< Formats and blend modes for the render targets of the graphics pipeline. */
-			target_info = {
+			depth_stencil_state = SDL.GPUDepthStencilState {
+				compare_op = .LESS_OR_EQUAL,
+				enable_depth_test = true,
+				enable_depth_write = true,
+			},
+			target_info = SDL.GPUGraphicsPipelineTargetInfo {
 				num_color_targets = 1,
 				color_target_descriptions = raw_data(color_target_desc),
 				depth_stencil_format = .D32_FLOAT,
@@ -142,7 +130,6 @@ main :: proc () {
 		mesh_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
 	}
 	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, mesh_pipeline)
-
 
 
 	window.mui_ctx = new(mui.Context)
@@ -169,29 +156,11 @@ main :: proc () {
 	texcoords: []hlm.float2
 	indices: []u32
 
-	// positions = {
-	// 	{-1, -1, -1},
-	// 	{-1, -1,  1},
-	// 	{-1,  1, -1},
-	// 	{-1,  1,  1},
-	// 	{ 1, -1, -1},
-	// 	{ 1, -1,  1},
-	// 	{ 1,  1, -1},
-	// 	{ 1,  1,  1},
-	// }
-	// texcoords = {
-	// 	{0,0},
-	// 	{0,0},
-	// 	{0,0},
-	// 	{0,0},
-	// 	{0,0},
-	// 	{0,0},
-	// 	{0,0},
-	// 	{0,0},
-	// }
-	// indices = {
-	// 	0, 1, 2, 2, 3, 1,
-	// }
+	rgba_u8 :: [4]u8
+	rgb_u8 :: [3]u8
+	rg_u8 :: [2]u8
+	base_color: []rgba_u8
+	metallic_roughness: []rg_u8
 
 
 	scene := helmet.scene
@@ -224,6 +193,24 @@ main :: proc () {
 		num_indices := cgltf.accessor_unpack_indices(primitive.indices, nil, 4, 0)
 		assert(len(indices) == int(num_indices))
 		num_indices = cgltf.accessor_unpack_indices(primitive.indices, &indices[0], 4, num_indices)
+
+		mat := primitive.material
+		fmt.println("material: ", mat)
+		if mat.has_pbr_metallic_roughness {
+			pbr := mat.pbr_metallic_roughness
+			tex_base_color_view: cgltf.texture_view = pbr.base_color_texture
+			tex_base_color :=  tex_base_color_view.texture
+			img_base_color := tex_base_color.image_
+			fmt.println(img_base_color.mime_type)
+			img_buffer_view := img_base_color.buffer_view
+			img_buffer := img_buffer_view.buffer
+			fmt.println(img_buffer)
+
+			img_rw := SDL2.RWFromConstMem(img_buffer.data, img_buffer.size)
+			surface := IMG.Load_RW(img_rw)
+
+			fmt.println(surface)
+		}
 	}
 
 	MeshBuffer :: struct {
