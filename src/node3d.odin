@@ -14,7 +14,7 @@ vec3 :: [3]f32
 vec4 :: [4]f32
 
 Basis :: matrix[3,3]f32
-Matrix3D :: matrix[4, 3]f32
+Matrix3D :: matrix[4, 4]f32
 
 PosRotScale :: struct {
 	position: vec3,

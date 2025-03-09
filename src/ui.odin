@@ -256,8 +256,8 @@ mui_process_sdl_event :: proc(mui_ctx: ^mui.Context, event: SDL.Event) {
 			case 'C': mui.input_key_up(mui_ctx, .C)
 			case 'V': mui.input_key_up(mui_ctx, .V)
 		}
-	case:
-		fmt.println(event.type)
+	// case:
+	// 	fmt.println(event.type)
 	}
 }
 

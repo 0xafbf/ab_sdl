@@ -4,30 +4,35 @@ package main
 import SDL "vendor:sdl3"
 import mui "vendor:microui"
 
+import "core:fmt"
+import "core:log"
 import "core:math"
 import "core:math/linalg"
-import "core:fmt"
 
 // import "core:runtime"
 
 main :: proc () {
-	fmt.println("SDL Init")
+	context.logger = log.create_console_logger()
+
+	log.info("hello")
+
+	log.info("SDL Init")
 	init_success := SDL.Init(SDL.INIT_VIDEO)
 	if (!init_success) {
-		fmt.println("failed to initialize SDL")
+		log.info("failed to initialize SDL")
 		return
 	}
 
-	fmt.println("SDL CreateGPUDevice")
+	log.info("SDL CreateGPUDevice")
 	gpu_device := SDL.CreateGPUDevice({.SPIRV}, true, nil)
 	if gpu_device == nil {
-		fmt.println("unable to get gpu device")
+		log.info("unable to get gpu device")
 		return
 	}
 	defer SDL.DestroyGPUDevice(gpu_device)
 
 
-	fmt.println("SDL CreateWindow")
+	log.info("SDL CreateWindow")
 
 	window_flags := SDL.WindowFlags{.VULKAN, .RESIZABLE}
 
@@ -37,18 +42,21 @@ main :: proc () {
 
 	sdl_window := SDL.CreateWindow("My App", i32(window.size.x), i32(window.size.y), window_flags);
 	if sdl_window == nil {
-		fmt.println("failed to create sdl_window")
+		log.info("failed to create sdl_window")
 		return
 	}
 	defer SDL.DestroyWindow(sdl_window)
 
+	log.info("SDL ClaimWindowForGPUDevice")
 	success := SDL.ClaimWindowForGPUDevice(gpu_device, sdl_window)
 	if !success {
 		return
 	}
 	defer SDL.ReleaseWindowFromGPUDevice(gpu_device, sdl_window)
 
+	log.info("SDL GetGPUSwapchainTextureFormat")
 	window.format = SDL.GetGPUSwapchainTextureFormat(gpu_device, sdl_window)
+	log.info("ui_load_pipelines")
 	ui_load_pipelines(&window, gpu_device)
 	defer ui_unload_pipelines(&window, gpu_device)
 
@@ -79,13 +87,13 @@ main :: proc () {
 
 	mesh_pipeline: ^SDL.GPUGraphicsPipeline
 	{
-		fmt.println("loading vertex shader")
-		fmt.println("loading vertex shader")
-		fmt.println("loading vertex shader")
+		log.info("loading vertex shader")
+		log.info("loading vertex shader")
+		log.info("loading vertex shader")
 		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/basic.vert.spv", .VERTEX, 0, 0, 0, 2)
-		fmt.println("loading frag shader")
-		fmt.println("loading frag shader")
-		fmt.println("loading frag shader")
+		log.info("loading frag shader")
+		log.info("loading frag shader")
+		log.info("loading frag shader")
 		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/basic.frag.spv", .FRAGMENT, 1, 0, 0, 0)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
@@ -157,6 +165,15 @@ main :: proc () {
 				scale = {1,1,1},
 			},
 		},
+	}
+
+	for &instance in instances {
+		instance_trs : PosRotScale = instance.transform.(PosRotScale)
+		instance_rot := instance_trs.rotation
+		quat := linalg.quaternion_from_pitch_yaw_roll(instance_rot.y, instance_rot.z, instance_rot.x)
+
+		instance.global_transform = linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
+
 	}
 
 
@@ -304,15 +321,10 @@ main :: proc () {
 		proj_mat := linalg.matrix4_perspective_f32(f32(fovy), f32(aspect), f32(near), f32(far))
 		uniform0 := [2]f32m4 {cam_mat, proj_mat}
 
-		for instance in instances {
-			instance_trs : PosRotScale = instance.transform.(PosRotScale)
-			instance_rot := instance_trs.rotation
-			quat := linalg.quaternion_from_pitch_yaw_roll(instance_rot.y, instance_rot.z, instance_rot.x)
-
-			model_mat := linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
+		for &instance in instances {
 
 			SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
-			SDL.PushGPUVertexUniformData(cmd_buf, 1, &model_mat, size_of(model_mat))
+			SDL.PushGPUVertexUniformData(cmd_buf, 1, &instance.global_transform, size_of(instance.global_transform))
 
 			mesh_draw(mesh_render_pass, instance.mesh^)
 		}
