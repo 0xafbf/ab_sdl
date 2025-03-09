@@ -2,15 +2,11 @@
 package main
 
 import SDL "vendor:sdl3"
-import IMG "vendor:sdl3/image"
 import mui "vendor:microui"
-import "vendor:cgltf"
 
 import "core:math"
 import "core:math/linalg"
-import hlm "core:math/linalg/hlsl"
 import "core:fmt"
-import "core:mem"
 
 // import "core:runtime"
 
@@ -142,100 +138,32 @@ main :: proc () {
 	last_ticks: u64 = SDL.GetTicksNS()
 
 
-	helmet: ^cgltf.data
-	result: cgltf.result
 	helmet_path :cstring= "Content/sample/damaged_helmet.glb"
-	helmet, result = cgltf.parse_file({}, helmet_path)
-	assert(result == .success)
-	load_result := cgltf.load_buffers({}, helmet, helmet_path)
-	assert(load_result == .success)
-	defer cgltf.free(helmet)
+	helmet := mesh_load(helmet_path, gpu_device)
+	defer mesh_free(&helmet, gpu_device)
 
-	positions: []hlm.float3
-	texcoords: []hlm.float2
-	indices: []u32
-
-	rgba_u8 :: [4]u8
-	rgb_u8 :: [3]u8
-	rg_u8 :: [2]u8
-	base_color: ^SDL.Surface
-
-	scene := helmet.scene
-	fmt.println("nodes ", len(scene.nodes))
-	root := scene.nodes[0]
-	root_mesh := root.mesh
-	fmt.println("  mesh primitives:", len(root_mesh.primitives))
-	for primitive in root_mesh.primitives {
-		fmt.println("  primitive type:", primitive.type)
-		for attribute in primitive.attributes {
-			fmt.println("    attribute type:", attribute.type)
-			fmt.println("    attribute data:", attribute.data)
-			if attribute.type == .position {
-				assert(attribute.data.type == .vec3)
-				positions = make([]hlm.float3, attribute.data.count)
-				num_floats := cgltf.accessor_unpack_floats(attribute.data, nil, 0)
-				assert(num_floats == attribute.data.count * 3)
-				num_floats = cgltf.accessor_unpack_floats(attribute.data, &positions[0][0], num_floats)
-			} else if attribute.type == .texcoord {
-				assert(attribute.data.type == .vec2)
-				texcoords = make([]hlm.float2, attribute.data.count)
-				num_floats := cgltf.accessor_unpack_floats(attribute.data, nil, 0)
-				assert(num_floats == attribute.data.count * 2)
-				num_floats = cgltf.accessor_unpack_floats(attribute.data, &texcoords[0][0], num_floats)
-				fmt.println("unpack floats ", num_floats)
-			}
-		}
-
-		indices = make([]u32, primitive.indices.count)
-		num_indices := cgltf.accessor_unpack_indices(primitive.indices, nil, 4, 0)
-		assert(len(indices) == int(num_indices))
-		num_indices = cgltf.accessor_unpack_indices(primitive.indices, &indices[0], 4, num_indices)
-
-		mat := primitive.material
-		fmt.println("material: ", mat)
-		if mat.has_pbr_metallic_roughness {
-			pbr := mat.pbr_metallic_roughness
-			tex_base_color_view: cgltf.texture_view = pbr.base_color_texture
-			tex_base_color :=  tex_base_color_view.texture
-			img_base_color := tex_base_color.image_
-			fmt.println(img_base_color.mime_type)
-			img_buffer_view := img_base_color.buffer_view
-			img_buffer := img_buffer_view.buffer
-			fmt.println(img_buffer)
-
-			data_ptr := ([^]u8)(img_buffer.data)
-			img_io := SDL.IOFromConstMem(&data_ptr[img_buffer_view.offset], img_buffer_view.size)
-			base_color = IMG.Load_IO(img_io, false)
-		}
+	instances := []MeshInstance3D {
+		{
+			mesh = &helmet,
+			transform = PosRotScale{
+				position = {0, 0, 0},
+				scale = {1,1,1},
+			},
+		},
+		{
+			mesh = &helmet,
+			transform = PosRotScale{
+				position = {4, 0, 0},
+				scale = {1,1,1},
+			},
+		},
 	}
-
-	base_color_tex := ab_create_texture(gpu_device, base_color)
-
-
-	buf_mesh_pos := meshbuffer_create(gpu_device, positions, {.VERTEX})
-	buf_mesh_uv := meshbuffer_create(gpu_device, texcoords, {.VERTEX})
-	buf_mesh_idx := meshbuffer_create(gpu_device, indices, {.INDEX})
-	defer meshbuffer_destroy(gpu_device, buf_mesh_pos)
-	defer meshbuffer_destroy(gpu_device, buf_mesh_uv)
-	defer meshbuffer_destroy(gpu_device, buf_mesh_idx)
-
-	copied := false
-
-	copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
-	copy_pass := SDL.BeginGPUCopyPass(copy_cmd_buf)
-	ab_texture_upload(base_color_tex, copy_pass)
-	meshbuffer_upload(buf_mesh_pos, copy_pass)
-	meshbuffer_upload(buf_mesh_uv, copy_pass)
-	meshbuffer_upload(buf_mesh_idx, copy_pass)
-	SDL.EndGPUCopyPass(copy_pass)
-	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
 
 
 	pitch := f32(math.TAU / 12)
 	yaw := f32(math.TAU / 8)
 	distance := f32(5.0)
 	f32m4 :: matrix[4, 4]f32
-
 
 	tex_depth := SDL.CreateGPUTexture(gpu_device, {
 		type = .D2,
@@ -353,15 +281,7 @@ main :: proc () {
 
 		SDL.SetGPUViewport(mesh_render_pass, {0, 0, f32(window.size.x), f32(window.size.y), 0, 1})
 
-		bindings := []SDL.GPUBufferBinding{
-			{ buffer = buf_mesh_pos.gpu_buffer, offset = 0 },
-			{ buffer = buf_mesh_uv.gpu_buffer, offset = 0 },
-		}
-
 		SDL.BindGPUGraphicsPipeline(mesh_render_pass, mesh_pipeline)
-		SDL.BindGPUVertexBuffers(mesh_render_pass, 0, &bindings[0], u32(len(bindings)))
-		SDL.BindGPUIndexBuffer(mesh_render_pass, {buf_mesh_idx.gpu_buffer, 0}, ._32BIT)
-
 
 
 		cam_pos := [3]f32 {
@@ -375,7 +295,6 @@ main :: proc () {
 		cam_left := linalg.normalize(linalg.cross(cam_up, cam_fwd))
 		cam_up = linalg.cross(cam_fwd, cam_left)
 
-
 		cam_mat := linalg.matrix4_look_at(cam_pos, [3]f32{}, [3]f32{0, 1, 0})
 
 		fovy := math.to_radians(f64(90.0))
@@ -383,26 +302,21 @@ main :: proc () {
 		near := 0.1
 		far := 100.0
 		proj_mat := linalg.matrix4_perspective_f32(f32(fovy), f32(aspect), f32(near), f32(far))
-
-		model_scale : f32 = 1
-
 		uniform0 := [2]f32m4 {cam_mat, proj_mat}
-		model_mat : matrix[4,4]f32 = model_scale
-		model_mat[3,3] = 1
-		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
-		SDL.PushGPUVertexUniformData(cmd_buf, 1, &model_mat, size_of(model_mat))
 
-		sampler_bindings := []SDL.GPUTextureSamplerBinding {
-			{
-				texture = base_color_tex.texture,
-				sampler = window.ui_sampler,
-			}
+		for instance in instances {
+			instance_trs : PosRotScale = instance.transform.(PosRotScale)
+			instance_rot := instance_trs.rotation
+			quat := linalg.quaternion_from_pitch_yaw_roll(instance_rot.y, instance_rot.z, instance_rot.x)
+
+			model_mat := linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
+
+			SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
+			SDL.PushGPUVertexUniformData(cmd_buf, 1, &model_mat, size_of(model_mat))
+
+			mesh_draw(mesh_render_pass, instance.mesh^)
 		}
-		SDL.BindGPUFragmentSamplers(mesh_render_pass, 0, &sampler_bindings[0], u32(len(sampler_bindings)))
 
-		// SDL.DrawGPUPrimitives(mesh_render_pass, u32(len(indices)), 1, 0, 0)
-		SDL.DrawGPUIndexedPrimitives(mesh_render_pass, u32(len(indices)), 1, 0, 0, 0)
-		// SDL.DrawGPUPrimitives(mesh_render_pass, 12, 1, 0, 0)
 		SDL.EndGPURenderPass(mesh_render_pass)
 
 

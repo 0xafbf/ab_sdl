@@ -43,13 +43,13 @@ LoadShader :: proc(
 	return shader
 }
 
-ab_texture :: struct {
+Texture :: struct {
 	surface: ^SDL.Surface,
 	texture: ^SDL.GPUTexture,
 	transfer_buffer: ^SDL.GPUTransferBuffer,
 }
 
-ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> ab_texture {
+ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture {
 	texture_format: SDL.GPUTextureFormat
 	exact_match: bool = false
 	bytes_per_pixel: i32 = 0
@@ -60,7 +60,7 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> ab_text
 	}
 
 	assert(texture_format != .INVALID)
-	result: ab_texture
+	result: Texture
 	result.surface = surface
 	result.texture = SDL.CreateGPUTexture(gpu, SDL.GPUTextureCreateInfo{
 		type = .D2,
@@ -95,7 +95,7 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> ab_text
 	return result
 }
 
-ab_texture_upload :: proc(tex: ab_texture, copy_pass: ^SDL.GPUCopyPass) {
+ab_texture_upload :: proc(tex: Texture, copy_pass: ^SDL.GPUCopyPass) {
 	SDL.UploadToGPUTexture(copy_pass, SDL.GPUTextureTransferInfo {
 		transfer_buffer = tex.transfer_buffer,
 		pixels_per_row = u32(tex.surface.w),
@@ -140,7 +140,9 @@ meshbuffer_upload :: proc(buf: MeshBuffer, copy_pass: ^SDL.GPUCopyPass) {
 	)
 }
 
-meshbuffer_destroy :: proc(gpu: ^SDL.GPUDevice, buf: MeshBuffer) {
+meshbuffer_destroy :: proc(gpu: ^SDL.GPUDevice, buf: ^MeshBuffer) {
 	SDL.ReleaseGPUBuffer(gpu, buf.gpu_buffer)
 	SDL.ReleaseGPUTransferBuffer(gpu, buf.transfer_buffer)
+	buf.gpu_buffer = nil
+	buf.transfer_buffer = nil
 }
