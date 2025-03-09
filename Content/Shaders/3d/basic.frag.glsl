@@ -5,12 +5,14 @@ layout(set = 2, binding = 1) uniform sampler2D u_tex_metal_rough;
 layout(set = 2, binding = 2) uniform sampler2D u_tex_normalmap;
 
 layout(set = 3, binding = 0) uniform Light {
-	vec4 light_direction;
+	vec3 light_direction;
 };
 
 
 layout(location = 0) in vec2 v_texcoord;
 layout(location = 1) in mat3 v_tangentspace;
+layout(location = 4) in vec3 v_camera;
+layout(location = 5) in vec3 v_position;
 
 layout(location = 0) out vec4 frag_color;
 
@@ -23,6 +25,22 @@ void main() {
     // color.rgb = color.aaa;
     // color.xy = v_texcoord;
     frag_color.xyz = color.xyz * intensity;
+
+    // phong
+    vec3 to_light = -light_direction;
+    vec3 reflection = -to_light + (2 * dot(to_light, normal) * normal);
+    vec3 to_cam = normalize(v_position - v_camera);
+
+    float specular = dot(reflection, to_cam);
+    float roughness = metal_rough.y;
+    float shine = 1.0 - roughness;
+    specular = pow(specular, 1.0 / roughness) * shine;
+
+    frag_color.xyz += max(0.0, specular);
+
+
+    // blinn phong
+
 
     gl_FragDepth = gl_FragCoord.z;       // Write fragment depth
 }
