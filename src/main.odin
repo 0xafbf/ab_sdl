@@ -87,14 +87,8 @@ main :: proc () {
 
 	mesh_pipeline: ^SDL.GPUGraphicsPipeline
 	{
-		log.info("loading vertex shader")
-		log.info("loading vertex shader")
-		log.info("loading vertex shader")
 		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/basic.vert.spv", .VERTEX, 0, 0, 0, 2)
-		log.info("loading frag shader")
-		log.info("loading frag shader")
-		log.info("loading frag shader")
-		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/basic.frag.spv", .FRAGMENT, 1, 0, 0, 0)
+		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/basic.frag.spv", .FRAGMENT, 3, 0, 0, 1)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
 		color_target_desc := []SDL.GPUColorTargetDescription{{
@@ -104,10 +98,14 @@ main :: proc () {
 		vertex_buffer_descriptions := []SDL.GPUVertexBufferDescription {
 			{slot=0, pitch=12}, 
 			{slot=1, pitch=8},
+			{slot=2, pitch=12},
+			{slot=3, pitch=12},
 		}
 		vertex_attributes := []SDL.GPUVertexAttribute {
 			{location = 0, buffer_slot = 0, format = .FLOAT3},
 			{location = 1, buffer_slot = 1, format = .FLOAT2},
+			{location = 2, buffer_slot = 2, format = .FLOAT3},
+			{location = 3, buffer_slot = 3, format = .FLOAT3},
 		}
 
 		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
@@ -182,6 +180,9 @@ main :: proc () {
 	distance := f32(5.0)
 	f32m4 :: matrix[4, 4]f32
 
+	light_pitch := f32(math.TAU / 4 * 0.7)
+	light_yaw := f32(math.TAU / 8)
+
 	tex_depth := SDL.CreateGPUTexture(gpu_device, {
 		type = .D2,
 		format = .D32_FLOAT,
@@ -246,6 +247,10 @@ main :: proc () {
 			mui.number(window.mui_ctx, &pitch, 1.0/255)
 			mui.label(window.mui_ctx, "Yaw")
 			mui.number(window.mui_ctx, &yaw, 1.0/255)
+			mui.label(window.mui_ctx, "Light Pitch")
+			mui.number(window.mui_ctx, &light_pitch, 1.0/255)
+			mui.label(window.mui_ctx, "Light Yaw")
+			mui.number(window.mui_ctx, &light_yaw, 1.0/255)
 
 		}
 		mui.end(window.mui_ctx)
@@ -320,12 +325,21 @@ main :: proc () {
 		far := 100.0
 		proj_mat := linalg.matrix4_perspective_f32(f32(fovy), f32(aspect), f32(near), f32(far))
 		uniform0 := [2]f32m4 {cam_mat, proj_mat}
+		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
+
+		light_yaw += f32(dt)
+		light_data := [4]f32 {
+			math.cos(light_pitch) * math.cos(light_yaw),
+			math.sin(light_pitch),
+			math.cos(light_pitch) * math.sin(light_yaw),
+			0,
+		}
+
+		SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
 
 		for &instance in instances {
-
-			SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
 			SDL.PushGPUVertexUniformData(cmd_buf, 1, &instance.global_transform, size_of(instance.global_transform))
-
+			SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
 			mesh_draw(mesh_render_pass, instance.mesh^)
 		}
 

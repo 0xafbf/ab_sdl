@@ -9,6 +9,7 @@ import "core:math"
 import "core:math/linalg"
 import hlm "core:math/linalg/hlsl"
 import "core:fmt"
+import "core:log"
 import "core:mem"
 
 // import "core:runtime"
@@ -113,6 +114,7 @@ MeshBuffer :: struct {
 	size: u32,
 	gpu_buffer: ^SDL.GPUBuffer,
 	transfer_buffer: ^SDL.GPUTransferBuffer,
+	data: union {[]f32, []u32}
 }
 meshbuffer_create :: proc (gpu: ^SDL.GPUDevice, field: []$T, usage: SDL.GPUBufferUsageFlags) -> MeshBuffer {
 	buf: MeshBuffer
