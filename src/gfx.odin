@@ -51,6 +51,7 @@ Texture :: struct {
 }
 
 ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture {
+	assert(surface != nil)
 	texture_format: SDL.GPUTextureFormat
 	exact_match: bool = false
 	bytes_per_pixel: i32 = 0

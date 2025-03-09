@@ -34,11 +34,11 @@ void main() {
     float specular = dot(reflection, to_cam);
     float roughness = metal_rough.y;
     float shine = 1.0 - roughness;
-    specular = pow(specular, 1.0 / roughness) * shine;
+    float specular_add = pow(specular, 1.0 / roughness) * shine;
 
-    frag_color.xyz += max(0.0, specular);
+    frag_color.xyz += max(0.0, specular_add);
 
-
+    frag_color.xyz = vec3(specular);
     // blinn phong
 
 

@@ -2,12 +2,15 @@
 package main
 
 import SDL "vendor:sdl3"
+import IMG "vendor:sdl3/image"
 import mui "vendor:microui"
+import exr "vendor:OpenEXRCore"
 
 import "core:fmt"
 import "core:log"
 import "core:math"
 import "core:math/linalg"
+
 
 // import "core:runtime"
 
@@ -143,6 +146,66 @@ main :: proc () {
 	dt: f64 = 0
 	last_ticks: u64 = SDL.GetTicksNS()
 
+
+	hdr_path: cstring = "Content/sample/empty_play_room_4k.exr"
+	log.info("hdr IMG.Load")
+	exr_ctx: exr.context_t
+	result := exr.start_read(&exr_ctx, hdr_path, nil)
+	assert(result == .SUCCESS)
+
+	num_parts: i32
+	exr.get_count(exr_ctx, &num_parts)
+	assert(num_parts == 1)
+
+	part_name: cstring
+	exr.get_name(exr_ctx, 0, &part_name)
+	log.info("got part:", part_name)
+
+	channels: ^exr.attr_chlist_t
+	channel_r, channel_g, channel_b: int
+	exr.get_channels(exr_ctx, 0, &channels)
+	for idx in 0..<channels.num_channels {
+		channel := channels.entries[idx]
+		log.info("  channel: ", channel)
+		if channel.name.str == "R" { channel_r = idx }
+		else if channel.name.str == "G" { channel_g = idx }
+		else if channel.name.str == "B" { channel_b = idx }
+	}
+
+	log.info("  channel_r: ", channel_r)
+	log.info("  channel_g: ", channel_g)
+	log.info("  channel_b: ", channel_b)
+
+	data_window: exr.attr_box2i_t
+	exr.get_data_window(exr_ctx, 0, &data_window)
+	log.info("  data_window: ", data_window)
+
+	exr_size := []int {
+		data_window.max.x - data_window.min.x + 1,
+		data_window.max.y - data_window.min.y + 1,
+	}
+	exr_num_pixels := exr_size.x * exr_size.y
+	exr_pixels := make([]hlsl.float3, exr_num_pixels)
+
+
+	/*
+	Hdr_img := IMG.Load(hdr_path)
+	if hdr_img == nil {
+		error := SDL.GetError()
+		log.info("error loading file, ", error)
+		return
+	}
+	log.info("hdr create_texture hdr")
+	hdr_tex := ab_create_texture(gpu_device, hdr_img)
+
+	log.info("copy to gpu")
+	copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
+	copy_pass := SDL.BeginGPUCopyPass(copy_cmd_buf)
+	ab_texture_upload(hdr_tex, copy_pass)
+	SDL.EndGPUCopyPass(copy_pass)
+	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
+	log.info("submitted copy")
+*/
 
 	helmet_path :cstring= "Content/sample/damaged_helmet.glb"
 	helmet := mesh_load(helmet_path, gpu_device)
