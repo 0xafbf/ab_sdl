@@ -10,6 +10,7 @@ import "core:fmt"
 import "core:log"
 import "core:math"
 import "core:math/linalg"
+import "core:math/linalg/hlsl"
 
 
 // import "core:runtime"
@@ -91,7 +92,7 @@ main :: proc () {
 	mesh_pipeline: ^SDL.GPUGraphicsPipeline
 	{
 		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/basic.vert.spv", .VERTEX, 0, 0, 0, 2)
-		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/basic.frag.spv", .FRAGMENT, 3, 0, 0, 1)
+		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/basic.frag.spv", .FRAGMENT, 4, 0, 0, 1)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
 		color_target_desc := []SDL.GPUColorTargetDescription{{
@@ -136,6 +137,31 @@ main :: proc () {
 	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, mesh_pipeline)
 
 
+	env_pipeline: ^SDL.GPUGraphicsPipeline
+	{
+		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/env.vert.spv", .VERTEX, 0, 0, 0, 1)
+		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/env.frag.spv", .FRAGMENT, 1, 0, 0, 0)
+		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
+		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
+		color_target_desc := []SDL.GPUColorTargetDescription{{
+			format = window.format
+		}}
+
+		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
+			vertex_shader = shader_vert,
+			fragment_shader = shader_frag,
+			primitive_type = .TRIANGLESTRIP,
+			target_info = SDL.GPUGraphicsPipelineTargetInfo {
+				num_color_targets = 1,
+				color_target_descriptions = raw_data(color_target_desc),
+			},
+		}
+
+		env_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
+	}
+	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, env_pipeline)
+
+
 	window.mui_ctx = new(mui.Context)
 	mui.init(window.mui_ctx)
 	window.mui_ctx.text_width = mui.default_atlas_text_width
@@ -162,7 +188,7 @@ main :: proc () {
 	log.info("got part:", part_name)
 
 	channels: ^exr.attr_chlist_t
-	channel_r, channel_g, channel_b: int
+	channel_r, channel_g, channel_b: i32
 	exr.get_channels(exr_ctx, 0, &channels)
 	for idx in 0..<channels.num_channels {
 		channel := channels.entries[idx]
@@ -180,14 +206,67 @@ main :: proc () {
 	exr.get_data_window(exr_ctx, 0, &data_window)
 	log.info("  data_window: ", data_window)
 
-	exr_size := []int {
+	exr_size := [2]i32 {
 		data_window.max.x - data_window.min.x + 1,
 		data_window.max.y - data_window.min.y + 1,
 	}
 	exr_num_pixels := exr_size.x * exr_size.y
-	exr_pixels := make([]hlsl.float3, exr_num_pixels)
+	exr_pixels := make([]hlsl.float4, exr_num_pixels)
 
 
+	// ensure our image isn't tile based as we don't support that yet
+	exr_tile_levels_x, exr_tile_levels_y: i32
+	tile_levels_result := exr.get_tile_levels(exr_ctx, 0, &exr_tile_levels_x, &exr_tile_levels_y)
+	assert(tile_levels_result != .SUCCESS)
+
+	chunk_count: i32
+	exr.get_chunk_count(exr_ctx, 0, &chunk_count)
+	log.info("chunk count:", chunk_count)
+	log.info("start decoding")
+
+	scanline: i32 = 0
+	for scanline < exr_size.y {
+		chunk_info: exr.chunk_info_t
+		exr.read_scanline_chunk_info(exr_ctx, 0, scanline, &chunk_info)
+		//bytes := make([]u8, chunk_info.packed_size)
+		//exr.read_chunk(exr_ctx, 0, chunk_info, &bytes[0])
+		decoder: exr.decode_pipeline_t
+		exr.decoding_initialize(exr_ctx, 0, &chunk_info, &decoder)
+
+		start_idx := chunk_info.start_x + (chunk_info.start_y * exr_size.x)
+		log.info("loading chunk ", chunk_info)
+		scanline = chunk_info.start_y + chunk_info.height
+
+		decode_r := &decoder.channels[channel_r]
+		decode_r.user_bytes_per_element = 4
+		decode_r.user_data_type = u16(exr.pixel_type_t.FLOAT)
+		decode_r.user_pixel_stride = 16
+		decode_r.user_line_stride = 16 * exr_size.x
+		decode_r.decode_to_ptr = (^u8)(&exr_pixels[start_idx][0])
+		
+		decode_g := &decoder.channels[channel_g]
+		decode_g.user_bytes_per_element = 4
+		decode_g.user_data_type = u16(exr.pixel_type_t.FLOAT)
+		decode_g.user_pixel_stride = 16
+		decode_g.user_line_stride = 16 * exr_size.x
+		decode_g.decode_to_ptr = (^u8)(&exr_pixels[start_idx][1])
+		
+		decode_b := &decoder.channels[channel_b]
+		decode_b.user_bytes_per_element = 4
+		decode_b.user_data_type = u16(exr.pixel_type_t.FLOAT)
+		decode_b.user_pixel_stride = 16
+		decode_b.user_line_stride = 16 * exr_size.x
+		decode_b.decode_to_ptr = (^u8)(&exr_pixels[start_idx][2])
+
+		exr.decoding_choose_default_routines(exr_ctx, 0, &decoder)
+		exr.decoding_run(exr_ctx, 0, &decoder)
+
+		exr.decoding_destroy(exr_ctx, &decoder)
+	}	
+	log.info("finished decoding")
+
+	environment := ab_create_texture_raw(gpu_device, {u32(exr_size.x), u32(exr_size.y)}, exr_pixels)
+	
 	/*
 	Hdr_img := IMG.Load(hdr_path)
 	if hdr_img == nil {
@@ -197,15 +276,15 @@ main :: proc () {
 	}
 	log.info("hdr create_texture hdr")
 	hdr_tex := ab_create_texture(gpu_device, hdr_img)
-
+*/
 	log.info("copy to gpu")
 	copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
 	copy_pass := SDL.BeginGPUCopyPass(copy_cmd_buf)
-	ab_texture_upload(hdr_tex, copy_pass)
+	ab_texture_upload(environment, copy_pass)
 	SDL.EndGPUCopyPass(copy_pass)
+	log.info("submitting copy")
 	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
 	log.info("submitted copy")
-*/
 
 	helmet_path :cstring= "Content/sample/damaged_helmet.glb"
 	helmet := mesh_load(helmet_path, gpu_device)
@@ -227,6 +306,8 @@ main :: proc () {
 			},
 		},
 	}
+
+	log.info("instances")
 
 	for &instance in instances {
 		instance_trs : PosRotScale = instance.transform.(PosRotScale)
@@ -361,14 +442,6 @@ main :: proc () {
 		}
 
 
-
-		mesh_render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info_3d, 1, &depth_target_info)
-
-		SDL.SetGPUViewport(mesh_render_pass, {0, 0, f32(window.size.x), f32(window.size.y), 0, 1})
-
-		SDL.BindGPUGraphicsPipeline(mesh_render_pass, mesh_pipeline)
-
-
 		cam_pos := [3]f32 {
 			math.cos(pitch) * math.cos(yaw),
 			math.sin(pitch),
@@ -388,6 +461,27 @@ main :: proc () {
 		far := 100.0
 		proj_mat := linalg.matrix4_perspective_f32(f32(fovy), f32(aspect), f32(near), f32(far))
 		uniform0 := [2]f32m4 {cam_mat, proj_mat}
+
+		global_sampler_bindings := []SDL.GPUTextureSamplerBinding {
+			{
+				texture = environment.texture,
+				sampler = window.ui_sampler,
+			},
+		}
+
+		mesh_render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info_3d, 1, &depth_target_info)
+
+		SDL.SetGPUViewport(mesh_render_pass, {0, 0, f32(window.size.x), f32(window.size.y), 0, 1})
+
+		// draw environment
+		SDL.BindGPUGraphicsPipeline(mesh_render_pass, env_pipeline)
+		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
+
+		SDL.BindGPUFragmentSamplers(mesh_render_pass, 0, &global_sampler_bindings[0], u32(len(global_sampler_bindings)))
+		SDL.DrawGPUPrimitives(mesh_render_pass, 4, 1, 0, 0)
+
+		// draw meshes
+		SDL.BindGPUGraphicsPipeline(mesh_render_pass, mesh_pipeline)
 		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
 
 		light_yaw += f32(dt)
@@ -399,6 +493,9 @@ main :: proc () {
 		}
 
 		SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
+
+		SDL.BindGPUFragmentSamplers(mesh_render_pass, 3, &global_sampler_bindings[0], u32(len(global_sampler_bindings)))
+
 
 		for &instance in instances {
 			SDL.PushGPUVertexUniformData(cmd_buf, 1, &instance.global_transform, size_of(instance.global_transform))

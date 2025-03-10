@@ -45,16 +45,44 @@ LoadShader :: proc(
 }
 
 Texture :: struct {
+	size: [2]u32,
 	surface: ^SDL.Surface,
 	texture: ^SDL.GPUTexture,
 	transfer_buffer: ^SDL.GPUTransferBuffer,
+}
+
+ab_create_texture_raw :: proc(gpu: ^SDL.GPUDevice, size: [2]u32, data_rgba: [][4]f32) -> (result: Texture) {
+	result.size = size
+	log.info("A")
+	texture_format: SDL.GPUTextureFormat = .R32G32B32A32_FLOAT
+	result.texture = SDL.CreateGPUTexture(gpu, SDL.GPUTextureCreateInfo{
+		type = .D2,
+		format = texture_format,
+		usage = {.SAMPLER},
+		width = size.x,
+		height = size.y,
+		layer_count_or_depth = 1,
+		num_levels = 1,
+	})
+	buffer_size: u32 = size.x * size.y * 4 * 4
+	result.transfer_buffer = SDL.CreateGPUTransferBuffer(gpu, SDL.GPUTransferBufferCreateInfo {
+		usage = .UPLOAD,
+		size = buffer_size,
+	})
+
+	log.info("B")
+	transfer_mem := SDL.MapGPUTransferBuffer(gpu, result.transfer_buffer, false)
+	mem.copy_non_overlapping(transfer_mem, &data_rgba[0][0], int(buffer_size))
+	SDL.UnmapGPUTransferBuffer(gpu, result.transfer_buffer)
+	log.info("C")
+	return result
 }
 
 ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture {
 	assert(surface != nil)
 	texture_format: SDL.GPUTextureFormat
 	exact_match: bool = false
-	bytes_per_pixel: i32 = 0
+	bytes_per_pixel: u32 = 0
 	if surface.format == .RGB24 {
 		texture_format = .R8G8B8A8_UNORM
 		exact_match = false
@@ -63,21 +91,23 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture
 
 	assert(texture_format != .INVALID)
 	result: Texture
+	result.size = {u32(surface.w), u32(surface.h)}
 	result.surface = surface
 	result.texture = SDL.CreateGPUTexture(gpu, SDL.GPUTextureCreateInfo{
 		type = .D2,
 		format = texture_format,
 		usage = {.SAMPLER},
-		width = u32(surface.w),
-		height = u32(surface.h),
+		width = result.size.x,
+		height = result.size.y,
 		layer_count_or_depth = 1,
 		num_levels = 1,
 	})
 
-	buffer_size: i32 = surface.w * surface.h * bytes_per_pixel
+	num_pixels := result.size.x * result.size.y
+	buffer_size: u32 = num_pixels * bytes_per_pixel
 	result.transfer_buffer = SDL.CreateGPUTransferBuffer(gpu, SDL.GPUTransferBufferCreateInfo{
 		usage = .UPLOAD,
-		size = u32(buffer_size),
+		size = buffer_size,
 	})
 
 	transfer_buffer_mem := SDL.MapGPUTransferBuffer(gpu, result.transfer_buffer, false)
@@ -86,10 +116,9 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture
 	} else {
 		rgb :: [3]u8
 		rgba :: [4]u8
-		num_pixels := surface.w * surface.h
 		tgt_mem := ([^]rgba)(transfer_buffer_mem)
 		src_mem := ([^]rgb)(surface.pixels)
-		for idx in 0..<(num_pixels) {
+		for idx in 0 ..< num_pixels {
 			tgt_mem[idx].xyz = src_mem[idx]
 		}
 	}
@@ -100,12 +129,12 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture
 ab_texture_upload :: proc(tex: Texture, copy_pass: ^SDL.GPUCopyPass) {
 	SDL.UploadToGPUTexture(copy_pass, SDL.GPUTextureTransferInfo {
 		transfer_buffer = tex.transfer_buffer,
-		pixels_per_row = u32(tex.surface.w),
-		rows_per_layer = u32(tex.surface.h),
+		pixels_per_row = tex.size.x,
+		rows_per_layer = tex.size.y,
 	}, SDL.GPUTextureRegion {
 		texture = tex.texture, 
 		x = 0, y = 0, 
-		w = u32(tex.surface.w), h = u32(tex.surface.h), d = 1,
+		w = tex.size.x, h = tex.size.y, d = 1,
 	}, false)
 }
 

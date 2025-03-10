@@ -7,3 +7,6 @@ glslang.exe .\Content\Shaders\ui\rect_tex.frag.glsl -V -o .\Content\Shaders\ui\r
 
 glslang.exe .\Content\Shaders\3d\basic.vert.glsl -V -o .\Content\Shaders\3d\basic.vert.spv
 glslang.exe .\Content\Shaders\3d\basic.frag.glsl -V -o .\Content\Shaders\3d\basic.frag.spv
+
+glslang.exe .\Content\Shaders\3d\env.vert.glsl -V -o .\Content\Shaders\3d\env.vert.spv
+glslang.exe .\Content\Shaders\3d\env.frag.glsl -V -o .\Content\Shaders\3d\env.frag.spv
