@@ -10,3 +10,6 @@ glslang.exe .\Content\Shaders\3d\basic.frag.glsl -V -o .\Content\Shaders\3d\basi
 
 glslang.exe .\Content\Shaders\3d\env.vert.glsl -V -o .\Content\Shaders\3d\env.vert.spv
 glslang.exe .\Content\Shaders\3d\env.frag.glsl -V -o .\Content\Shaders\3d\env.frag.spv
+
+glslang.exe .\Content\Shaders\3d\line.vert.glsl -V -o .\Content\Shaders\3d\line.vert.spv
+glslang.exe .\Content\Shaders\3d\line.frag.glsl -V -o .\Content\Shaders\3d\line.frag.spv

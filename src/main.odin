@@ -139,8 +139,8 @@ main :: proc () {
 
 	line_pipeline: ^SDL.GPUGraphicsPipeline
 	{
-		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/line.vert.spv", .VERTEX, 0, 0, 0, 2)
-		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/line.frag.spv", .FRAGMENT, 4, 0, 0, 1)
+		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/line.vert.spv", .VERTEX, 0, 0, 0, 3)
+		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/line.frag.spv", .FRAGMENT, 1, 0, 0, 0)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
 		color_target_desc := []SDL.GPUColorTargetDescription{{
@@ -159,12 +159,13 @@ main :: proc () {
 			{location = 1, buffer_slot = 1, format = .FLOAT2},
 			{location = 2, buffer_slot = 2, format = .FLOAT4},
 			{location = 3, buffer_slot = 3, format = .FLOAT3},
-			{location = 4, buffer_slot = 3, format = .FLOAT3},
+			{location = 4, buffer_slot = 4, format = .FLOAT3},
 		}
 
 		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
 			vertex_shader = shader_vert,
 			fragment_shader = shader_frag,
+			primitive_type = .TRIANGLESTRIP,
 			vertex_input_state = {
 				&vertex_buffer_descriptions[0], u32(len(vertex_buffer_descriptions)),
 				&vertex_attributes[0], u32(len(vertex_attributes)),
@@ -185,6 +186,21 @@ main :: proc () {
 		line_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
 	}
 	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, line_pipeline)
+
+	line_x: LinePrimitive
+	primitive_append_vertex(&line_x, {position = {0, 0, 0}, color = {1, 0, 0, 1}})
+	primitive_append_vertex(&line_x, {position = {5, 0, 0}, color = {1, 0, 0, 1}})
+	line_x_mesh := mesh_from_line(gpu_device, line_x)
+
+	line_y: LinePrimitive
+	primitive_append_vertex(&line_y, {position = {0, 0, 0}, color = {0, 1, 0, 1}})
+	primitive_append_vertex(&line_y, {position = {0, 5, 0}, color = {0, 1, 0, 1}})
+	line_y_mesh := mesh_from_line(gpu_device, line_y)
+
+	line_z: LinePrimitive
+	primitive_append_vertex(&line_z, {position = {0, 0, 0}, color = {0, 0, 1, 1}})
+	primitive_append_vertex(&line_z, {position = {0, 0, 5}, color = {0, 0, 1, 1}})
+	line_z_mesh := mesh_from_line(gpu_device, line_z)
 
 
 	env_pipeline: ^SDL.GPUGraphicsPipeline
@@ -235,26 +251,19 @@ main :: proc () {
 
 	part_name: cstring
 	exr.get_name(exr_ctx, 0, &part_name)
-	log.info("got part:", part_name)
 
 	channels: ^exr.attr_chlist_t
 	channel_r, channel_g, channel_b: i32
 	exr.get_channels(exr_ctx, 0, &channels)
 	for idx in 0..<channels.num_channels {
 		channel := channels.entries[idx]
-		log.info("  channel: ", channel)
 		if channel.name.str == "R" { channel_r = idx }
 		else if channel.name.str == "G" { channel_g = idx }
 		else if channel.name.str == "B" { channel_b = idx }
 	}
 
-	log.info("  channel_r: ", channel_r)
-	log.info("  channel_g: ", channel_g)
-	log.info("  channel_b: ", channel_b)
-
 	data_window: exr.attr_box2i_t
 	exr.get_data_window(exr_ctx, 0, &data_window)
-	log.info("  data_window: ", data_window)
 
 	exr_size := [2]i32 {
 		data_window.max.x - data_window.min.x + 1,
@@ -263,7 +272,6 @@ main :: proc () {
 	exr_num_pixels := exr_size.x * exr_size.y
 	exr_pixels := make([]hlsl.float4, exr_num_pixels)
 
-
 	// ensure our image isn't tile based as we don't support that yet
 	exr_tile_levels_x, exr_tile_levels_y: i32
 	tile_levels_result := exr.get_tile_levels(exr_ctx, 0, &exr_tile_levels_x, &exr_tile_levels_y)
@@ -271,10 +279,7 @@ main :: proc () {
 
 	chunk_count: i32
 	exr.get_chunk_count(exr_ctx, 0, &chunk_count)
-	log.info("chunk count:", chunk_count)
-	log.info("start decoding")
-
-
+	log.info("start decoding exr")
 
 	scanline: i32 = 0
 	for scanline < exr_size.y {
@@ -286,7 +291,6 @@ main :: proc () {
 		exr.decoding_initialize(exr_ctx, 0, &chunk_info, &decoder)
 
 		start_idx := chunk_info.start_x + (chunk_info.start_y * exr_size.x)
-		log.info("loading chunk ", chunk_info)
 		scanline = chunk_info.start_y + chunk_info.height
 
 		decode_r := &decoder.channels[channel_r]
@@ -347,6 +351,7 @@ main :: proc () {
 			mesh = &helmet,
 			transform = PosRotScale{
 				position = {0, 0, 0},
+				rotation = {0, 3.14, 0},
 				scale = {1,1,1},
 			},
 		},
@@ -354,6 +359,7 @@ main :: proc () {
 			mesh = &helmet,
 			transform = PosRotScale{
 				position = {4, 0, 0},
+				rotation = {0, 3.14, 0},
 				scale = {1,1,1},
 			},
 		},
@@ -496,8 +502,9 @@ main :: proc () {
 
 		cam_pos := [3]f32 {
 			math.cos(pitch) * math.cos(yaw),
-			math.sin(pitch),
 			math.cos(pitch) * math.sin(yaw),
+			math.sin(pitch),
+
 		}
 		cam_fwd := linalg.normalize(-cam_pos)
 		cam_pos *= distance
@@ -505,14 +512,44 @@ main :: proc () {
 		cam_left := linalg.normalize(linalg.cross(cam_up, cam_fwd))
 		cam_up = linalg.cross(cam_fwd, cam_left)
 
-		cam_mat := linalg.matrix4_look_at(cam_pos, [3]f32{}, [3]f32{0, 1, 0})
+		//cam_mat := matrix4_look_at_f32(cam_pos, [3]f32{}, [3]f32{0, 0, 1})
+
+		cam_mat := matrix[4,4]f32 {
+			cam_fwd.x, cam_left.x, cam_up.x, cam_pos.x,
+			cam_fwd.y, cam_left.y, cam_up.y, cam_pos.y,
+			cam_fwd.z, cam_left.z, cam_up.z, cam_pos.z,
+			0, 0, 0, 1,
+		}
+
+		cam_mat = linalg.inverse(cam_mat)
+
 
 		fovy := math.to_radians(f64(90.0))
 		aspect := f32(window.size.x) / f32(window.size.y)
 		near := 0.1
 		far := 100.0
 		proj_mat := linalg.matrix4_perspective_f32(f32(fovy), f32(aspect), f32(near), f32(far))
+
+
+		cam_fix_mat := f32m4 {
+			0, 0, 1, 0,
+			1, 0, 0, 0,
+			0, 1, 0, 0,
+			0, 0, 0, 1
+		}
+		cam_fix_mat = 1
+		cam_mat = cam_fix_mat * cam_mat
+		axes_mat := f32m4 {
+			 0, -1, 0, 0,
+			 0,  0, 1, 0,
+			 -1,  0, 0, 0,
+			 0,  0, 0, 1,
+		}
+		//axes_mat = linalg.transpose(axes_mat)
+		proj_mat = proj_mat * axes_mat
 		uniform0 := [2]f32m4 {cam_mat, proj_mat}
+
+		identity: f32m4 = 1
 
 		global_sampler_bindings := []SDL.GPUTextureSamplerBinding {
 			{
@@ -531,6 +568,21 @@ main :: proc () {
 
 		SDL.BindGPUFragmentSamplers(mesh_render_pass, 0, &global_sampler_bindings[0], u32(len(global_sampler_bindings)))
 		SDL.DrawGPUPrimitives(mesh_render_pass, 4, 1, 0, 0)
+		SDL.BindGPUFragmentSamplers(mesh_render_pass, 0, &global_sampler_bindings[0], u32(len(global_sampler_bindings)))
+
+		// draw axes
+		SDL.BindGPUGraphicsPipeline(mesh_render_pass, line_pipeline)
+		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
+		SDL.PushGPUVertexUniformData(cmd_buf, 1, &identity, size_of(identity))
+
+		line_width: f32 = 0.2
+
+		SDL.PushGPUVertexUniformData(cmd_buf, 2, &line_width, size_of(line_width))
+
+		mesh_draw_verts(mesh_render_pass, line_x_mesh)
+		mesh_draw_verts(mesh_render_pass, line_y_mesh)
+		mesh_draw_verts(mesh_render_pass, line_z_mesh)
+
 
 		// draw meshes
 		SDL.BindGPUGraphicsPipeline(mesh_render_pass, mesh_pipeline)
@@ -539,8 +591,8 @@ main :: proc () {
 		light_yaw += f32(dt)
 		light_data := [4]f32 {
 			math.cos(light_pitch) * math.cos(light_yaw),
-			math.sin(light_pitch),
 			math.cos(light_pitch) * math.sin(light_yaw),
+			math.sin(light_pitch),
 			0,
 		}
 

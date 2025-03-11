@@ -23,6 +23,7 @@ LoadShader :: proc(
 	in_num_storage_bufs: u32 = 0, 
 	in_num_uniform_bufs: u32 = 0,
 ) -> ^SDL.GPUShader {
+	log.info("loading shader:", in_path)
 	shader_size: uint = ---
 	// path_cstr := cstring(in_path)
 	shader_code := cast([^]u8) SDL.LoadFile(in_path, &shader_size)

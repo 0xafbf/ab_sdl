@@ -5,6 +5,7 @@ import SDL "vendor:sdl3"
 import IMG "vendor:sdl3/image"
 import "vendor:cgltf"
 
+import "core:math/linalg"
 import "core:math/linalg/hlsl"
 import "core:fmt"
 import "core:log"
@@ -71,6 +72,7 @@ Mesh :: struct {
 	buf_mesh_normal: MeshBuffer,
 	buf_mesh_tangent: MeshBuffer,
 	buf_mesh_uv: MeshBuffer,
+	buf_mesh_color: MeshBuffer,
 	buf_mesh_idx: MeshBuffer,
 	base_color_tex: Texture,
 	metal_rough_tex: Texture,
@@ -175,7 +177,6 @@ mesh_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (mesh: Mesh) {
 
 
 		mat := primitive.material
-		fmt.println("material: ", mat)
 		if mat.has_pbr_metallic_roughness {
 			pbr := mat.pbr_metallic_roughness
 
@@ -185,14 +186,12 @@ mesh_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (mesh: Mesh) {
 			metallic_roughness_texture := load_cgltf_texture(pbr.metallic_roughness_texture)
 			mesh.metal_rough_tex = ab_create_texture(gpu_device,  metallic_roughness_texture)
 
-			log.info("normal texture", mat.normal_texture)
 			normal_texture := load_cgltf_texture(mat.normal_texture)
 			mesh.normal_tex = ab_create_texture(gpu_device,  normal_texture)
 
 			load_cgltf_texture :: proc(tex_view: cgltf.texture_view) -> ^SDL.Surface {
 
 				image := tex_view.texture.image_
-				log.info("image:", image)
 				buffer_view := image.buffer_view
 				buffer := buffer_view.buffer
 
@@ -252,6 +251,102 @@ mesh_draw :: proc(render_pass: ^SDL.GPURenderPass, mesh: Mesh) {
 	SDL.BindGPUFragmentSamplers(render_pass, 0, &sampler_bindings[0], u32(len(sampler_bindings)))
 
 	// SDL.DrawGPUPrimitives(render_pass, u32(len(indices)), 1, 0, 0)
-	SDL.DrawGPUIndexedPrimitives(render_pass, mesh.buf_mesh_idx.size, 1, 0, 0, 0)
+	SDL.DrawGPUIndexedPrimitives(render_pass, mesh.buf_mesh_idx.size/4, 1, 0, 0, 0)
 	// SDL.DrawGPUPrimitives(render_pass, 12, 1, 0, 0)
+}
+
+mesh_draw_verts :: proc(render_pass: ^SDL.GPURenderPass, mesh: Mesh) {
+
+	bindings := []SDL.GPUBufferBinding{
+		{ buffer = mesh.buf_mesh_pos.gpu_buffer, offset = 0 },
+		{ buffer = mesh.buf_mesh_uv.gpu_buffer, offset = 0 },
+		{ buffer = mesh.buf_mesh_color.gpu_buffer, offset = 0 },
+		{ buffer = mesh.buf_mesh_normal.gpu_buffer, offset = 0 },
+		{ buffer = mesh.buf_mesh_tangent.gpu_buffer, offset = 0 },
+	}
+
+	SDL.BindGPUVertexBuffers(render_pass, 0, &bindings[0], u32(len(bindings)))
+	SDL.DrawGPUPrimitives(render_pass, mesh.buf_mesh_pos.size/4, 1, 0, 0)
+}
+
+mesh_from_line :: proc(gpu_device: ^SDL.GPUDevice, line: LinePrimitive) -> Mesh {
+	mesh: Mesh
+
+	mesh.buf_mesh_pos = meshbuffer_create(gpu_device, line.positions[:], {.VERTEX})
+	mesh.buf_mesh_normal = meshbuffer_create(gpu_device, line.normals[:], {.VERTEX})
+	mesh.buf_mesh_tangent = meshbuffer_create(gpu_device, line.tangents[:], {.VERTEX})
+	mesh.buf_mesh_uv = meshbuffer_create(gpu_device, line.texcoords[:], {.VERTEX})
+	mesh.buf_mesh_color = meshbuffer_create(gpu_device, line.colors[:], {.VERTEX})
+
+	copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
+	copy_pass := SDL.BeginGPUCopyPass(copy_cmd_buf)
+	meshbuffer_upload(mesh.buf_mesh_pos, copy_pass)
+	meshbuffer_upload(mesh.buf_mesh_normal, copy_pass)
+	meshbuffer_upload(mesh.buf_mesh_tangent, copy_pass)
+	meshbuffer_upload(mesh.buf_mesh_uv, copy_pass)
+	meshbuffer_upload(mesh.buf_mesh_color, copy_pass)
+	log.info("positions", line.positions)
+	log.info("tangents ", line.tangents)
+	log.info("colors   ", line.colors)
+	SDL.EndGPUCopyPass(copy_pass)
+	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
+
+	return mesh
+}
+
+
+LineVertex :: struct {
+	position: hlsl.float3,
+	normal: hlsl.float3,
+	texcoord: hlsl.float2,
+	color: hlsl.float4,
+}
+
+LinePrimitive :: struct {
+	positions: [dynamic]hlsl.float3,
+	normals: [dynamic]hlsl.float3,
+	tangents: [dynamic]hlsl.float3,
+	texcoords: [dynamic]hlsl.float2,
+	colors: [dynamic]hlsl.float4,
+}
+
+primitive_append_vertex :: proc(using primitive: ^LinePrimitive, vert: LineVertex) {
+
+	num_verts := len(positions)
+	tangent_new: hlsl.float3
+
+	if num_verts > 2 {
+		before_last_position := positions[num_verts-4]
+		new_last_tangent := linalg.normalize(vert.position - before_last_position)
+		tangents[num_verts-2] = new_last_tangent
+		tangents[num_verts-2] = new_last_tangent
+
+		last_position := positions[num_verts-2]
+		tangent_new = linalg.normalize(vert.position - last_position)
+	} else if num_verts == 2 {
+		existing_position := positions[0]
+		tangent_new = linalg.normalize(vert.position - existing_position)
+		tangents[0] = tangent_new
+		tangents[1] = tangent_new
+	}
+
+	append(&tangents, tangent_new)
+	append(&tangents, tangent_new)
+
+	append(&positions, vert.position)
+	append(&positions, vert.position)
+	append(&normals, vert.normal)
+	append(&normals, vert.normal)
+	append(&texcoords, [2]f32{vert.texcoord.x, 0})
+	append(&texcoords, [2]f32{vert.texcoord.x, 1})
+	append(&colors, vert.color)
+	append(&colors, vert.color)
+}
+
+primitive_delete :: proc(using primitive: LinePrimitive) {
+	delete(positions)
+	delete(normals)
+	delete(tangents)
+	delete(texcoords)
+	delete(colors)
 }

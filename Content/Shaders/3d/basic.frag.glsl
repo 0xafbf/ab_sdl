@@ -13,8 +13,8 @@ layout(set = 3, binding = 0) uniform Light {
 
 layout(location = 0) in vec2 v_texcoord;
 layout(location = 1) in mat3 v_tangentspace;
-layout(location = 4) in vec4 v_camera;
-layout(location = 5) in vec3 v_position;
+layout(location = 4) in vec3 v_camera;
+layout(location = 5) in vec4 v_position;
 
 layout(location = 0) out vec4 frag_color;
 
@@ -31,7 +31,7 @@ void main() {
     // phong
     vec3 to_light = -light_direction;
     vec3 reflection = -to_light + (2 * dot(to_light, normal) * normal);
-    vec3 to_cam = normalize(v_position - v_camera.xyz);
+    vec3 to_cam = normalize(v_position.xyz - v_camera.xyz);
 
     float specular = dot(reflection, to_cam);
     float roughness = metal_rough.y;
