@@ -19,8 +19,12 @@ const vec4 positions[4] = vec4[](
 void main() {
 	int vertex_id = gl_VertexIndex;
 	vec4 position = positions[vertex_id];
+	position.y /= projection[1][0];
+	position.z /= projection[2][1];
 	gl_Position = projection * position;
 	gl_Position.z = 1;
+
+
 	vec3 camera = inverse(mat3(view)) * position.xyz;
 	v_camera = camera.xyz;
 	//v_camera = position.xyz;
