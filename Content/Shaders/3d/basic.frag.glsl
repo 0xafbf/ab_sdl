@@ -7,7 +7,7 @@ layout(set = 2, binding = 2) uniform sampler2D u_tex_normalmap;
 layout(set = 2, binding = 3) uniform sampler2D u_environment;
 
 layout(set = 3, binding = 0) uniform Light {
-	vec3 light_direction;
+	vec3 light_pos;
 };
 
 
@@ -22,25 +22,42 @@ void main() {
     vec4 color = texture(u_texture, v_texcoord);
     vec4 metal_rough = texture(u_tex_metal_rough, v_texcoord);
     vec4 normal_map = texture(u_tex_normalmap, v_texcoord) * 2.0 - 1.0;
-    vec3 normal = v_tangentspace * normal_map.xyz;
-    float intensity = dot(normalize(normal), light_direction.xyz);
+    vec3 normal = normalize(v_tangentspace * normal_map.xyz);
+
+    vec3 to_light = normalize(light_pos);
     // color.rgb = color.aaa;
     // color.xy = v_texcoord;
+    float intensity = dot(normal, to_light);
+
+    float roughness = metal_rough.y;
+    float metallic = metal_rough.z;
+
     frag_color.xyz = color.xyz * intensity;
 
-    // phong
-    vec3 to_light = -light_direction;
-    vec3 reflection = -to_light + (2 * dot(to_light, normal) * normal);
-    vec3 to_cam = normalize(v_position.xyz - v_camera.xyz);
 
-    float specular = dot(reflection, to_cam);
-    float roughness = metal_rough.y;
+    vec3 to_cam = normalize(v_camera.xyz - v_position.xyz);
+    vec3 reflection = -to_cam + (2 * dot(to_cam, normal) * normal);
+
+    // phong
+    float specular = dot(reflection, to_light);
     float shine = 1.0 - roughness;
-    float specular_add = pow(specular, 1.0 / roughness) * shine;
+    float specular_add = pow(specular, 1.01/(0.01+roughness)) * shine * intensity;
 
     frag_color.xyz += max(0.0, specular_add);
 
-//    frag_color.xyz = vec3(specular);
+    vec2 env_uv;
+    env_uv.y = 1.0 - (asin(reflection.z) / 3.1416 + 0.5);
+    env_uv.x = 0.5 - atan(reflection.y, reflection.x) / 6.283;
+
+    vec4 env_color = texture(u_environment, env_uv);
+    frag_color.xyz += env_color.xyz * shine * 0.02;
+
+
+
+//    frag_color.xyz = normal;
+    //frag_color.xyz = reflection;//vec3(specular);
+    //frag_color.xyz = to_light;//vec3(specular);
+    //frag_color.xyz = v_camera;
     // blinn phong
 
 

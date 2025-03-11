@@ -25,9 +25,8 @@ layout(location = 5) out vec4 v_position;
 
 void main() {
 	v_position = model * vec4(in_position, 1.0);
-	v_position = projection * view * v_position;
-	gl_Position = v_position;
-	v_camera = -view[3].xyz;
+	gl_Position = projection * view * v_position;
+	v_camera = -view[3].xyz * mat3(view);
 	v_texcoord = in_texcoord;
 	vec3 cotangent = cross(in_normal, in_tangent);
 	v_tangentspace = mat3(model) * mat3(in_tangent, cotangent, in_normal);

@@ -351,7 +351,7 @@ main :: proc () {
 			mesh = &helmet,
 			transform = PosRotScale{
 				position = {0, 0, 0},
-				rotation = {0, 3.14, 0},
+				rotation = {0, 0, 0},
 				scale = {1,1,1},
 			},
 		},
@@ -359,7 +359,23 @@ main :: proc () {
 			mesh = &helmet,
 			transform = PosRotScale{
 				position = {4, 0, 0},
+				rotation = {3.14, 0, 0},
+				scale = {1,1,1},
+			},
+		},
+		{
+			mesh = &helmet,
+			transform = PosRotScale{
+				position = {0, 4, 0},
 				rotation = {0, 3.14, 0},
+				scale = {1,1,1},
+			},
+		},
+		{
+			mesh = &helmet,
+			transform = PosRotScale{
+				position = {0, 0, 4},
+				rotation = {0, 0, 3.14},
 				scale = {1,1,1},
 			},
 		},
