@@ -88,8 +88,12 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture
 		texture_format = .R8G8B8A8_UNORM
 		exact_match = false
 		bytes_per_pixel = 4
+	} else if surface.format == .ABGR8888 {
+		texture_format = .R8G8B8A8_UNORM
+		exact_match = true
+		bytes_per_pixel = 4
 	}
-
+	log.info("Loading texture format:", surface.format)
 	assert(texture_format != .INVALID)
 	result: Texture
 	result.size = {u32(surface.w), u32(surface.h)}
@@ -106,6 +110,7 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture
 
 	num_pixels := result.size.x * result.size.y
 	buffer_size: u32 = num_pixels * bytes_per_pixel
+	log.info("createtransferbuffer")
 	result.transfer_buffer = SDL.CreateGPUTransferBuffer(gpu, SDL.GPUTransferBufferCreateInfo{
 		usage = .UPLOAD,
 		size = buffer_size,
@@ -113,7 +118,7 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture
 
 	transfer_buffer_mem := SDL.MapGPUTransferBuffer(gpu, result.transfer_buffer, false)
 	if exact_match {
-		mem.copy_non_overlapping(transfer_buffer_mem, &mui.default_atlas_alpha[0], int(buffer_size));
+		mem.copy_non_overlapping(transfer_buffer_mem, surface.pixels, int(buffer_size));
 	} else {
 		rgb :: [3]u8
 		rgba :: [4]u8
@@ -124,6 +129,7 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture
 		}
 	}
 	SDL.UnmapGPUTransferBuffer(gpu, result.transfer_buffer)
+	log.info("unmapped")
 	return result
 }
 

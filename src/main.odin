@@ -346,6 +346,20 @@ main :: proc () {
 	helmet := mesh_load(helmet_path, gpu_device)
 	defer mesh_free(&helmet, gpu_device)
 
+	mirror_test := mesh_load("Content/sample/NormalTangentMirrorTest.glb", gpu_device)
+	defer mesh_free(&mirror_test, gpu_device)
+
+	instances := []MeshInstance3D {
+		{
+			mesh = &mirror_test,
+			transform = PosRotScale{
+				position = {0, 0, 0},
+				rotation = {3.14, 0, 0},
+				scale = {1,1,1},
+			},
+		},
+	}
+	/*
 	instances := []MeshInstance3D {
 		{
 			mesh = &helmet,
@@ -380,7 +394,7 @@ main :: proc () {
 			},
 		},
 	}
-
+*/
 	log.info("instances")
 
 	for &instance in instances {
