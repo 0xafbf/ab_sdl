@@ -103,13 +103,13 @@ main :: proc () {
 			{slot=0, pitch=12},
 			{slot=1, pitch=8},
 			{slot=2, pitch=12},
-			{slot=3, pitch=12},
+			{slot=3, pitch=16},
 		}
 		vertex_attributes := []SDL.GPUVertexAttribute {
 			{location = 0, buffer_slot = 0, format = .FLOAT3},
 			{location = 1, buffer_slot = 1, format = .FLOAT2},
 			{location = 2, buffer_slot = 2, format = .FLOAT3},
-			{location = 3, buffer_slot = 3, format = .FLOAT3},
+			{location = 3, buffer_slot = 3, format = .FLOAT4},
 		}
 
 		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
@@ -351,7 +351,7 @@ main :: proc () {
 			mesh = &helmet,
 			transform = PosRotScale{
 				position = {0, 0, 0},
-				rotation = {0, 0, 0},
+				rotation = {3.14, 0, 0},
 				scale = {1,1,1},
 			},
 		},
@@ -386,7 +386,7 @@ main :: proc () {
 	for &instance in instances {
 		instance_trs : PosRotScale = instance.transform.(PosRotScale)
 		instance_rot := instance_trs.rotation
-		quat := linalg.quaternion_from_pitch_yaw_roll(instance_rot.y, instance_rot.z, instance_rot.x)
+		quat := linalg.quaternion_from_euler_angles(instance_rot.x, instance_rot.y, instance_rot.z, .XYZ)
 
 		instance.global_transform = linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
 

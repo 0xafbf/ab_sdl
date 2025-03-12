@@ -12,7 +12,11 @@ layout(set = 3, binding = 0) uniform Light {
 
 
 layout(location = 0) in vec2 v_texcoord;
-layout(location = 1) in mat3 v_tangentspace;
+
+layout(location = 1) in vec4 v_tangent;
+layout(location = 2) in vec3 v_normal;
+layout(location = 3) in vec3 v_unused;
+
 layout(location = 4) in vec3 v_camera;
 layout(location = 5) in vec4 v_position;
 
@@ -22,7 +26,11 @@ void main() {
     vec4 color = texture(u_texture, v_texcoord);
     vec4 metal_rough = texture(u_tex_metal_rough, v_texcoord);
     vec4 normal_map = texture(u_tex_normalmap, v_texcoord) * 2.0 - 1.0;
-    vec3 normal = normalize(v_tangentspace * normal_map.xyz);
+    //normal_map.y *= -1;
+
+    vec3 bitangent = v_tangent.w * cross(v_normal, v_tangent.xyz);
+    mat3 v_tangentspace = mat3(v_tangent, bitangent, v_normal);
+    vec3 normal = normalize(v_tangent.xyz * normal_map.x + bitangent * normal_map.y + v_normal * normal_map.z);
 
     vec3 to_light = normalize(light_pos);
     // color.rgb = color.aaa;
@@ -53,8 +61,8 @@ void main() {
     frag_color.xyz += env_color.xyz * shine * 0.02;
 
 
-
-//    frag_color.xyz = normal;
+    //frag_color.xyz = normal;
+    //frag_color.xyz = v_tangent.xyz;
     //frag_color.xyz = reflection;//vec3(specular);
     //frag_color.xyz = to_light;//vec3(specular);
     //frag_color.xyz = v_camera;
