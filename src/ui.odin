@@ -1,6 +1,8 @@
 
 package main
 
+import "vendor/shaderc"
+
 import SDL "vendor:sdl3"
 import mui "vendor:microui"
 import "vendor:cgltf"
@@ -32,8 +34,10 @@ DrawContext :: struct {
 
 ui_load_pipelines :: proc(window: ^WindowData, gpu_device: ^SDL.GPUDevice) {
 
-	ui_rect_shader_vert := LoadShader(gpu_device, "Content/Shaders/ui/rect.vert.spv", .VERTEX, 0, 0, 0, 1)
-	ui_rect_shader_frag := LoadShader(gpu_device, "Content/Shaders/ui/rect.frag.spv", .FRAGMENT, 0, 0, 0, 1)
+	compiler := shaderc.compiler_initialize()
+
+	ui_rect_shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/ui/rect.vert.glsl", .VERTEX, 0, 0, 0, 1)
+	ui_rect_shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/ui/rect.frag.glsl", .FRAGMENT, 0, 0, 0, 1)
 
 
 	color_target_desc := []SDL.GPUColorTargetDescription{{
@@ -55,8 +59,8 @@ ui_load_pipelines :: proc(window: ^WindowData, gpu_device: ^SDL.GPUDevice) {
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_shader_vert)
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_shader_frag)
 
-	ui_rect_tex_shader_vert := LoadShader(gpu_device, "Content/Shaders/ui/rect_tex.vert.spv", .VERTEX, 0, 0, 0, 1)
-	ui_rect_tex_shader_frag := LoadShader(gpu_device, "Content/Shaders/ui/rect_tex.frag.spv", .FRAGMENT, 1, 0, 0, 1)
+	ui_rect_tex_shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/ui/rect_tex.vert.glsl", .VERTEX, 0, 0, 0, 1)
+	ui_rect_tex_shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/ui/rect_tex.frag.glsl", .FRAGMENT, 1, 0, 0, 1)
 
 	color_target_desc_tex := []SDL.GPUColorTargetDescription{{
 		format = window.format,

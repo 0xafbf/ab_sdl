@@ -1,6 +1,8 @@
 
 package main
 
+import "vendor/shaderc"
+
 import SDL "vendor:sdl3"
 import IMG "vendor:sdl3/image"
 import mui "vendor:microui"
@@ -64,35 +66,12 @@ main :: proc () {
 	ui_load_pipelines(&window, gpu_device)
 	defer ui_unload_pipelines(&window, gpu_device)
 
-	pipeline: ^SDL.GPUGraphicsPipeline
-	{
-		shader_vert := LoadShader(gpu_device, "Content/Shaders/Compiled/SPIRV/RawTriangle.vert.spv", .VERTEX)
-
-		shader_frag := LoadShader(gpu_device, "Content/Shaders/Compiled/SPIRV/SolidColor.frag.spv", .FRAGMENT)
-		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
-		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
-		color_target_desc := []SDL.GPUColorTargetDescription{{
-			format = window.format
-		}}
-
-		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
-			vertex_shader = shader_vert,
-			fragment_shader = shader_frag,
-			target_info = {
-				num_color_targets = 1,
-				color_target_descriptions = raw_data(color_target_desc),
-			},
-		}
-
-		pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
-	}
-	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, pipeline)
-
+	compiler := shaderc.compiler_initialize()
 
 	mesh_pipeline: ^SDL.GPUGraphicsPipeline
 	{
-		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/basic.vert.spv", .VERTEX, 0, 0, 0, 2)
-		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/basic.frag.spv", .FRAGMENT, 4, 0, 0, 1)
+		shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/basic.vert.glsl", .VERTEX, 0, 0, 0, 2)
+		shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/basic.frag.glsl", .FRAGMENT, 4, 0, 0, 1)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
 		color_target_desc := []SDL.GPUColorTargetDescription{{
@@ -139,8 +118,8 @@ main :: proc () {
 
 	line_pipeline: ^SDL.GPUGraphicsPipeline
 	{
-		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/line.vert.spv", .VERTEX, 0, 0, 0, 3)
-		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/line.frag.spv", .FRAGMENT, 1, 0, 0, 0)
+		shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/line.vert.glsl", .VERTEX, 0, 0, 0, 3)
+		shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/line.frag.glsl", .FRAGMENT, 1, 0, 0, 0)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
 		color_target_desc := []SDL.GPUColorTargetDescription{{
@@ -205,8 +184,8 @@ main :: proc () {
 
 	env_pipeline: ^SDL.GPUGraphicsPipeline
 	{
-		shader_vert := LoadShader(gpu_device, "Content/Shaders/3d/env.vert.spv", .VERTEX, 0, 0, 0, 1)
-		shader_frag := LoadShader(gpu_device, "Content/Shaders/3d/env.frag.spv", .FRAGMENT, 1, 0, 0, 0)
+		shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/env.vert.glsl", .VERTEX, 0, 0, 0, 1)
+		shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/env.frag.glsl", .FRAGMENT, 1, 0, 0, 0)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
 		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
 		color_target_desc := []SDL.GPUColorTargetDescription{{
@@ -343,9 +322,30 @@ main :: proc () {
 	log.info("submitted copy")
 
 	helmet_path :cstring= "Content/sample/damaged_helmet.glb"
-	helmet := mesh_load(helmet_path, gpu_device)
+	helmet := mesh_load(helmet_path, gpu_device, false)
+	helmet_correct := mesh_load(helmet_path, gpu_device, true)
 	defer mesh_free(&helmet, gpu_device)
 
+	instances_a := []MeshInstance3D {
+		{
+			mesh = &helmet,
+			transform = PosRotScale{
+				position = {0, 0, 0},
+				rotation = {3.14, 0, 0},
+				scale = {1,1,1},
+			},
+		},
+	}
+	instances_b := []MeshInstance3D {
+		{
+			mesh = &helmet_correct,
+			transform = PosRotScale{
+				position = {0, 0, 0},
+				rotation = {3.14, 0, 0},
+				scale = {1,1,1},
+			},
+		},
+	}
 	instances := []MeshInstance3D {
 		{
 			mesh = &helmet,
@@ -384,6 +384,24 @@ main :: proc () {
 	log.info("instances")
 
 	for &instance in instances {
+		instance_trs : PosRotScale = instance.transform.(PosRotScale)
+		instance_rot := instance_trs.rotation
+		quat := linalg.quaternion_from_euler_angles(instance_rot.x, instance_rot.y, instance_rot.z, .XYZ)
+
+		instance.global_transform = linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
+
+	}
+
+	for &instance in instances_a {
+		instance_trs : PosRotScale = instance.transform.(PosRotScale)
+		instance_rot := instance_trs.rotation
+		quat := linalg.quaternion_from_euler_angles(instance_rot.x, instance_rot.y, instance_rot.z, .XYZ)
+
+		instance.global_transform = linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
+
+	}
+
+	for &instance in instances_b {
 		instance_trs : PosRotScale = instance.transform.(PosRotScale)
 		instance_rot := instance_trs.rotation
 		quat := linalg.quaternion_from_euler_angles(instance_rot.x, instance_rot.y, instance_rot.z, .XYZ)
@@ -480,19 +498,6 @@ main :: proc () {
 		gotit := SDL.WaitAndAcquireGPUSwapchainTexture(cmd_buf, sdl_window, &swapchain_tex, nil, nil)
 		assert(gotit)
 		assert(swapchain_tex != nil)
-
-		color_target_info := SDL.GPUColorTargetInfo {
-			texture = swapchain_tex,
-			clear_color = {0, 0, 0, 1},
-			load_op = .CLEAR,
-			store_op = .STORE,
-		}
-
-		render_pass := SDL.BeginGPURenderPass(cmd_buf, &color_target_info, 1, nil)
-		SDL.BindGPUGraphicsPipeline(render_pass, pipeline)
-		SDL.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
-
-		SDL.EndGPURenderPass(render_pass)
 
 		color_target_info_3d := SDL.GPUColorTargetInfo {
 			texture = swapchain_tex,
@@ -616,11 +621,18 @@ main :: proc () {
 
 		SDL.BindGPUFragmentSamplers(mesh_render_pass, 3, &global_sampler_bindings[0], u32(len(global_sampler_bindings)))
 
-
-		for &instance in instances {
-			SDL.PushGPUVertexUniformData(cmd_buf, 1, &instance.global_transform, size_of(instance.global_transform))
-			SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
-			mesh_draw(mesh_render_pass, instance.mesh^)
+		if bool_value {
+			for &instance in instances_a {
+				SDL.PushGPUVertexUniformData(cmd_buf, 1, &instance.global_transform, size_of(instance.global_transform))
+				SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
+				mesh_draw(mesh_render_pass, instance.mesh^)
+			}
+		} else {
+			for &instance in instances_b {
+				SDL.PushGPUVertexUniformData(cmd_buf, 1, &instance.global_transform, size_of(instance.global_transform))
+				SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
+				mesh_draw(mesh_render_pass, instance.mesh^)
+			}
 		}
 
 		SDL.EndGPURenderPass(mesh_render_pass)

@@ -35,7 +35,7 @@ void main() {
     vec3 to_light = normalize(light_pos);
     // color.rgb = color.aaa;
     // color.xy = v_texcoord;
-    float intensity = dot(normal, to_light);
+    float intensity = clamp(dot(normal, to_light), 0.0, 1.0);
 
     float roughness = metal_rough.y;
     float metallic = metal_rough.z;

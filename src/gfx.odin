@@ -1,6 +1,8 @@
 
 package main
 
+import "vendor/shaderc"
+
 import SDL "vendor:sdl3"
 import mui "vendor:microui"
 import "vendor:cgltf"
@@ -13,6 +15,63 @@ import "core:log"
 import "core:mem"
 
 // import "core:runtime"
+
+
+CompLoadShader :: proc(
+	gpu: ^SDL.GPUDevice,
+	compiler: shaderc.compiler_t,
+	in_path: cstring,
+	in_stage: SDL.GPUShaderStage,
+	in_num_samplers: u32 = 0,
+	in_num_storage_tex: u32 = 0,
+	in_num_storage_bufs: u32 = 0,
+	in_num_uniform_bufs: u32 = 0,
+) -> ^SDL.GPUShader {
+	log.info("loading shader:", in_path)
+	shader_size: uint = ---
+	shader_code := SDL.LoadFile(in_path, &shader_size)
+
+	compile_options := shaderc.compile_options_initialize()
+	shaderc.compile_options_set_source_language(compile_options, shaderc.source_language.glsl)
+
+	log.info("compiling shader:", in_path)
+	shader_kind := shaderc.shader_kind.vertex_shader
+	if in_stage == .FRAGMENT {
+		shader_kind = .fragment_shader
+	}
+	entry_point_name := "main"
+
+	compile_result := shaderc.compile_into_spv(
+		compiler,
+		cstring(shader_code),
+		shader_size,
+		shader_kind,
+		in_path,
+		"main",
+		compile_options)
+	SDL.free(shader_code)
+
+	log.info("create gpushader:", in_path)
+	shader_info := SDL.GPUShaderCreateInfo {
+		code_size = shaderc.result_get_length(compile_result),
+		code = shaderc.result_get_bytes(compile_result),
+		entrypoint = "main",
+		format = {.SPIRV},
+		stage = in_stage,
+		num_samplers = in_num_samplers,
+		num_storage_textures = in_num_storage_tex,
+		num_storage_buffers = in_num_storage_bufs,
+		num_uniform_buffers = in_num_uniform_bufs,
+	}
+
+	shader := SDL.CreateGPUShader(gpu, shader_info)
+
+	shaderc.result_release(compile_result)
+
+	return shader
+
+}
+
 
 LoadShader :: proc(
 	gpu: ^SDL.GPUDevice, 
@@ -79,7 +138,7 @@ ab_create_texture_raw :: proc(gpu: ^SDL.GPUDevice, size: [2]u32, data_rgba: [][4
 	return result
 }
 
-ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture {
+ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface, format: SDL.GPUTextureFormat) -> Texture {
 	assert(surface != nil)
 	texture_format: SDL.GPUTextureFormat
 	exact_match: bool = false
@@ -90,13 +149,13 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface) -> Texture
 		bytes_per_pixel = 4
 	}
 
-	assert(texture_format != .INVALID)
+	assert(format != .INVALID)
 	result: Texture
 	result.size = {u32(surface.w), u32(surface.h)}
 	result.surface = surface
 	result.texture = SDL.CreateGPUTexture(gpu, SDL.GPUTextureCreateInfo{
 		type = .D2,
-		format = texture_format,
+		format = format,
 		usage = {.SAMPLER},
 		width = result.size.x,
 		height = result.size.y,

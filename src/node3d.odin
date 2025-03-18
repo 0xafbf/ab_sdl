@@ -1,7 +1,7 @@
 
 package main
 
-import mikk "mikktspace"
+import mikk "vendor/mikktspace"
 
 import SDL "vendor:sdl3"
 import IMG "vendor:sdl3/image"
@@ -91,7 +91,7 @@ mesh_free :: proc(mesh: ^Mesh, gpu: ^SDL.GPUDevice) {
 	meshbuffer_destroy(gpu, &mesh.buf_mesh_idx)
 }
 
-mesh_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (mesh: Mesh) {
+mesh_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice, correct: bool = false) -> (mesh: Mesh) {
 
 	data: ^cgltf.data
 	result: cgltf.result
@@ -139,80 +139,51 @@ mesh_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (mesh: Mesh) {
 		mesh.buf_mesh_idx.data = indices
 
 		if mesh.buf_mesh_tangent.size == 0 {
-			make_tangents :: proc(vertices: MeshBuffer, uvs: MeshBuffer, indices: MeshBuffer, normals: MeshBuffer) -> []hlsl.float4 {
-				log.info("making tangents")
-				data_pos := slice.reinterpret([]hlsl.float3, vertices.data.([]f32))
-				data_tex := slice.reinterpret([]hlsl.float2, uvs.data.([]f32))
-				data_normal := slice.reinterpret([]hlsl.float3, normals.data.([]f32))
-				log.info("   data_pos ", len(data_pos))
-				data_idx := indices.data.([]u32)
-				num_indices := len(data_idx)
-				log.info("   num indices ", num_indices)
-				buf_tangents := make([]hlsl.float4, len(data_pos))
-
-				MeshDataForTangents :: struct {
-					num_faces: int,
-					vertices: []hlsl.float3,
-					normals: []hlsl.float3,
-					indices: []u32,
-					uvs: []hlsl.float2,
-					tangents: []hlsl.float4,
-				}
-
-				mesh_data := MeshDataForTangents {
-					num_faces = len(data_idx) / 3,
-					vertices = data_pos,
-					normals = data_normal,
-					indices = data_idx,
-					uvs = data_tex,
-					tangents = buf_tangents,
-				}
-
-
-				get_num_faces ::            proc(pContext: ^mikk.Context) -> int {
-					mesh_data := (^MeshDataForTangents)(pContext.user_data)
-					return mesh_data.num_faces
-				}
-				get_num_vertices_of_face :: proc(pContext: ^mikk.Context, iFace: int) -> int {
-					return 3
-				}
-				get_position ::             proc(pContext: ^mikk.Context, iFace: int, iVert: int) -> [3]f32 {
-					mesh_data := (^MeshDataForTangents)(pContext.user_data)
-					return mesh_data.vertices[mesh_data.indices[(iFace*3)+iVert]]
-				}
-				get_normal ::               proc(pContext: ^mikk.Context, iFace: int, iVert: int) -> [3]f32 {
-					mesh_data := (^MeshDataForTangents)(pContext.user_data)
-					return mesh_data.normals[mesh_data.indices[(iFace*3)+iVert]]
-				}
-				get_tex_coord ::            proc(pContext: ^mikk.Context, iFace: int, iVert: int) -> [2]f32 {
-					mesh_data := (^MeshDataForTangents)(pContext.user_data)
-					return mesh_data.uvs[mesh_data.indices[(iFace*3)+iVert]]
-				}
-				set_t_space_basic ::        proc(pContext: ^mikk.Context, fvTangent: [3]f32, fSign: f32, iFace: int, iVert: int) {
-					mesh_data := (^MeshDataForTangents)(pContext.user_data)
-					mesh_data.tangents[mesh_data.indices[(iFace*3)+iVert]] = {fvTangent.x, fvTangent.y, fvTangent.z, fSign}
-				}
-
-				interface := mikk.Interface {
-					get_num_faces = get_num_faces,
-					get_num_vertices_of_face = get_num_vertices_of_face,
-					get_position = get_position,
-					get_normal = get_normal,
-					get_tex_coord = get_tex_coord,
-					set_t_space_basic = set_t_space_basic,
-				}
-
-				ctx := mikk.Context {
-					interface = &interface,
-					user_data = &mesh_data,
-				}
-
-				ok := mikk.generate_tangents(&ctx)
-
-				return buf_tangents
-			}
-			buf_tangents := make_tangents(mesh.buf_mesh_pos, mesh.buf_mesh_uv, mesh.buf_mesh_idx, mesh.buf_mesh_normal)
+			buf_tangents := make_tangents(
+				mesh.buf_mesh_pos.data.([]f32),
+				mesh.buf_mesh_uv.data.([]f32),
+				mesh.buf_mesh_idx.data.([]u32),
+				mesh.buf_mesh_normal.data.([]f32),
+			)
 			mesh.buf_mesh_tangent = meshbuffer_create(gpu_device, buf_tangents, {.VERTEX})
+		}
+		if correct {
+			new_pos := make([]f32, num_indices * 3)
+			new_uv := make([]f32, num_indices * 2)
+			new_normal := make([]f32, num_indices * 3)
+			new_idx := make([]u32, num_indices)
+			old_pos := mesh.buf_mesh_pos.data.([]f32)
+			old_normal := mesh.buf_mesh_normal.data.([]f32)
+			old_uv := mesh.buf_mesh_uv.data.([]f32)
+
+			for idx in 0..<num_indices  {
+				new_idx[idx] = u32(idx)
+				vert_idx := indices[idx]
+				new_pos[idx*3+0] = old_pos[vert_idx*3+0]
+				new_pos[idx*3+1] = old_pos[vert_idx*3+1]
+				new_pos[idx*3+2] = old_pos[vert_idx*3+2]
+
+				new_normal[idx*3+0] = old_normal[vert_idx*3+0]
+				new_normal[idx*3+1] = old_normal[vert_idx*3+1]
+				new_normal[idx*3+2] = old_normal[vert_idx*3+2]
+
+				new_uv[idx*2+0] = old_uv[vert_idx*2+0]
+				new_uv[idx*2+1] = old_uv[vert_idx*2+1]
+			}
+			new_tangents := make_tangents(
+				new_pos,
+				new_uv,
+				new_idx,
+				new_normal,
+			)
+
+			mesh.buf_mesh_pos = meshbuffer_create(gpu_device, new_pos, {.VERTEX})
+			mesh.buf_mesh_uv = meshbuffer_create(gpu_device, new_uv, {.VERTEX})
+			mesh.buf_mesh_normal = meshbuffer_create(gpu_device, new_normal, {.VERTEX})
+			mesh.buf_mesh_tangent = meshbuffer_create(gpu_device, new_tangents, {.VERTEX})
+			mesh.buf_mesh_idx = meshbuffer_create(gpu_device, new_idx, {.INDEX})
+
+
 		}
 
 
@@ -221,13 +192,13 @@ mesh_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (mesh: Mesh) {
 			pbr := mat.pbr_metallic_roughness
 
 			base_color := load_cgltf_texture(pbr.base_color_texture)
-			mesh.base_color_tex = ab_create_texture(gpu_device, base_color)
+			mesh.base_color_tex = ab_create_texture(gpu_device, base_color, .R8G8B8A8_UNORM_SRGB)
 
 			metallic_roughness_texture := load_cgltf_texture(pbr.metallic_roughness_texture)
-			mesh.metal_rough_tex = ab_create_texture(gpu_device,  metallic_roughness_texture)
+			mesh.metal_rough_tex = ab_create_texture(gpu_device,  metallic_roughness_texture, .R8G8B8A8_UNORM)
 
 			normal_texture := load_cgltf_texture(mat.normal_texture)
-			mesh.normal_tex = ab_create_texture(gpu_device,  normal_texture)
+			mesh.normal_tex = ab_create_texture(gpu_device,  normal_texture, .R8G8B8A8_UNORM)
 
 			load_cgltf_texture :: proc(tex_view: cgltf.texture_view) -> ^SDL.Surface {
 
@@ -261,6 +232,81 @@ mesh_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (mesh: Mesh) {
 
 	return mesh
 }
+
+make_tangents :: proc(vertices: []f32, uvs: []f32, indices: []u32, normals: []f32) -> []hlsl.float4 {
+	log.info("making tangents")
+	data_pos := slice.reinterpret([]hlsl.float3, vertices)
+	data_tex := slice.reinterpret([]hlsl.float2, uvs)
+	data_normal := slice.reinterpret([]hlsl.float3, normals)
+	log.info("   data_pos ", len(data_pos))
+	data_idx := indices
+	num_indices := len(data_idx)
+	log.info("   num indices ", num_indices)
+	buf_tangents := make([]hlsl.float4, len(data_pos))
+
+	MeshDataForTangents :: struct {
+		num_faces: int,
+		vertices: []hlsl.float3,
+		normals: []hlsl.float3,
+		indices: []u32,
+		uvs: []hlsl.float2,
+		tangents: []hlsl.float4,
+	}
+
+	mesh_data := MeshDataForTangents {
+		num_faces = len(data_idx) / 3,
+		vertices = data_pos,
+		normals = data_normal,
+		indices = data_idx,
+		uvs = data_tex,
+		tangents = buf_tangents,
+	}
+
+
+	get_num_faces ::            proc(pContext: ^mikk.Context) -> int {
+		mesh_data := (^MeshDataForTangents)(pContext.user_data)
+		return mesh_data.num_faces
+	}
+	get_num_vertices_of_face :: proc(pContext: ^mikk.Context, iFace: int) -> int {
+		return 3
+	}
+	get_position ::             proc(pContext: ^mikk.Context, iFace: int, iVert: int) -> [3]f32 {
+		mesh_data := (^MeshDataForTangents)(pContext.user_data)
+		return mesh_data.vertices[mesh_data.indices[(iFace*3)+iVert]]
+	}
+	get_normal ::               proc(pContext: ^mikk.Context, iFace: int, iVert: int) -> [3]f32 {
+		mesh_data := (^MeshDataForTangents)(pContext.user_data)
+		return mesh_data.normals[mesh_data.indices[(iFace*3)+iVert]]
+	}
+	get_tex_coord ::            proc(pContext: ^mikk.Context, iFace: int, iVert: int) -> [2]f32 {
+		mesh_data := (^MeshDataForTangents)(pContext.user_data)
+		return mesh_data.uvs[mesh_data.indices[(iFace*3)+iVert]]
+	}
+	set_t_space_basic ::        proc(pContext: ^mikk.Context, fvTangent: [3]f32, fSign: f32, iFace: int, iVert: int) {
+		mesh_data := (^MeshDataForTangents)(pContext.user_data)
+		mesh_data.tangents[mesh_data.indices[(iFace*3)+iVert]] = {fvTangent.x, fvTangent.y, fvTangent.z, fSign}
+	}
+
+	interface := mikk.Interface {
+		get_num_faces = get_num_faces,
+		get_num_vertices_of_face = get_num_vertices_of_face,
+		get_position = get_position,
+		get_normal = get_normal,
+		get_tex_coord = get_tex_coord,
+		set_t_space_basic = set_t_space_basic,
+	}
+
+	ctx := mikk.Context {
+		interface = &interface,
+		user_data = &mesh_data,
+	}
+
+	ok := mikk.generate_tangents(&ctx)
+
+	return buf_tangents
+}
+
+
 
 mesh_draw :: proc(render_pass: ^SDL.GPURenderPass, mesh: Mesh) {
 
