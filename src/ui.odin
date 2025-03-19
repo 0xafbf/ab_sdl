@@ -32,50 +32,46 @@ DrawContext :: struct {
 	render_pass: ^SDL.GPURenderPass
 }
 
-ui_load_pipelines :: proc(window: ^WindowData, gpu_device: ^SDL.GPUDevice) {
+ui_load_pipelines :: proc(gfx: Gfx, window: ^WindowData) {
 
-	compiler := shaderc.compiler_initialize()
-
-	ui_rect_shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/ui/rect.vert.glsl", .VERTEX, 0, 0, 0, 1)
-	ui_rect_shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/ui/rect.frag.glsl", .FRAGMENT, 0, 0, 0, 1)
-
+	ui_rect_shader_vert, ui_rect_shader_frag := LoadShader(gfx, "Content/Shaders/ui/rect", {0, 0, 0, 1}, {0, 0, 0, 1})
 
 	color_target_desc := []SDL.GPUColorTargetDescription{{
-		format = window.format
+		format = gfx.format
 	}}
 
-	ui_rect_pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
+	gpu_device := gfx.gpu
+	window.ui_rect_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, SDL.GPUGraphicsPipelineCreateInfo {
 		vertex_shader = ui_rect_shader_vert,
 		fragment_shader = ui_rect_shader_frag,
 		primitive_type = .TRIANGLESTRIP,
 		target_info = {
 			num_color_targets = 1,
 			color_target_descriptions = raw_data(color_target_desc),
-		}
-	}
-
-	window.ui_rect_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, ui_rect_pipeline_info)
+		},
+	})
 
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_shader_vert)
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_shader_frag)
 
-	ui_rect_tex_shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/ui/rect_tex.vert.glsl", .VERTEX, 0, 0, 0, 1)
-	ui_rect_tex_shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/ui/rect_tex.frag.glsl", .FRAGMENT, 1, 0, 0, 1)
+	ui_rect_tex_shader_vert, ui_rect_tex_shader_frag := LoadShader(gfx, "Content/Shaders/ui/rect_tex", {0, 0, 0, 1}, {1, 0, 0, 1})
 
-	color_target_desc_tex := []SDL.GPUColorTargetDescription{{
-		format = window.format,
-		blend_state = {
-			src_color_blendfactor = .SRC_ALPHA,
-			dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA,
-			color_blend_op = .ADD,
-			src_alpha_blendfactor = .SRC_ALPHA,
-			dst_alpha_blendfactor = .ONE_MINUS_SRC_ALPHA,
-			alpha_blend_op = .ADD,
-			enable_blend = true,
+	color_target_desc_tex := []SDL.GPUColorTargetDescription{
+		{
+			format = gfx.format,
+			blend_state = {
+				src_color_blendfactor = .SRC_ALPHA,
+				dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA,
+				color_blend_op = .ADD,
+				src_alpha_blendfactor = .SRC_ALPHA,
+				dst_alpha_blendfactor = .ONE_MINUS_SRC_ALPHA,
+				alpha_blend_op = .ADD,
+				enable_blend = true,
+			}
 		}
-	}}
+	}
 
-	ui_rect_tex_pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
+	window.ui_rect_tex_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, SDL.GPUGraphicsPipelineCreateInfo {
 		vertex_shader = ui_rect_tex_shader_vert,
 		fragment_shader = ui_rect_tex_shader_frag,
 		primitive_type = .TRIANGLESTRIP,
@@ -83,15 +79,10 @@ ui_load_pipelines :: proc(window: ^WindowData, gpu_device: ^SDL.GPUDevice) {
 			num_color_targets = 1,
 			color_target_descriptions = raw_data(color_target_desc_tex),
 		}
-	}
-
-	window.ui_rect_tex_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, ui_rect_tex_pipeline_info)
-	fmt.println("release shaders")
+	})
 
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_tex_shader_vert)
 	SDL.ReleaseGPUShader(gpu_device, ui_rect_tex_shader_frag)
-
-
 
 	window.ui_texture = SDL.CreateGPUTexture(gpu_device, SDL.GPUTextureCreateInfo{
 		type = .D2,

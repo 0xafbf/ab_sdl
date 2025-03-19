@@ -44,10 +44,17 @@ void main() {
 
 
     vec3 to_cam = normalize(v_camera.xyz - v_position.xyz);
+
+    vec3 midpoint = normalize(to_light + to_cam);
+
     vec3 reflection = -to_cam + (2 * dot(to_cam, normal) * normal);
 
     // phong
     float specular = dot(reflection, to_light);
+
+    //blinn
+    specular = dot(midpoint, normal);
+
     float shine = 1.0 - roughness;
     float specular_add = pow(specular, 1.01/(0.01+roughness)) * shine * intensity;
 

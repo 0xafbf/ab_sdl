@@ -14,20 +14,187 @@ import "core:fmt"
 import "core:log"
 import "core:mem"
 
-// import "core:runtime"
+
+Gfx :: struct {
+	gpu: ^SDL.GPUDevice,
+	compiler: shaderc.compiler_t,
+
+	format: SDL.GPUTextureFormat,
+
+	mesh_shader: Shader2,
+	line_shader: Shader2,
+	env_shader: Shader2,
+}
+
+Shader2 :: struct {
+	pipeline: ^SDL.GPUGraphicsPipeline,
+}
+
+
+gfx_create :: proc(
+	gpu: ^SDL.GPUDevice, window: WindowData
+) -> (gfx: Gfx) {
+
+	gfx.gpu = gpu
+	gfx.compiler = shaderc.compiler_initialize()
+	gfx.format = window.format
+
+	gfx.mesh_shader = gfx_make_mesh_shader(gfx)
+	gfx.line_shader = gfx_make_line_shader(gfx)
+	gfx.env_shader = gfx_make_env_shader(gfx)
+	return gfx
+}
+
+
+gfx_make_mesh_shader :: proc(gfx: Gfx) -> Shader2 {
+	base_path := "Content/Shaders/3d/basic"
+	shader_vert, shader_frag := LoadShader(gfx, base_path, {0, 0, 0, 2}, {4, 0, 0, 1})
+	defer SDL.ReleaseGPUShader(gfx.gpu, shader_vert)
+	defer SDL.ReleaseGPUShader(gfx.gpu, shader_frag)
+	color_target_desc := []SDL.GPUColorTargetDescription{
+		{ format = gfx.format },
+	}
+
+	vertex_buffer_descriptions := []SDL.GPUVertexBufferDescription {
+		{slot=0, pitch=12},
+		{slot=1, pitch=8},
+		{slot=2, pitch=12},
+		{slot=3, pitch=16},
+	}
+	vertex_attributes := []SDL.GPUVertexAttribute {
+		{location = 0, buffer_slot = 0, format = .FLOAT3},
+		{location = 1, buffer_slot = 1, format = .FLOAT2},
+		{location = 2, buffer_slot = 2, format = .FLOAT3},
+		{location = 3, buffer_slot = 3, format = .FLOAT4},
+	}
+
+	shader: Shader2
+	shader.pipeline = SDL.CreateGPUGraphicsPipeline(gfx.gpu, SDL.GPUGraphicsPipelineCreateInfo {
+		vertex_shader = shader_vert,
+		fragment_shader = shader_frag,
+		vertex_input_state = {
+				&vertex_buffer_descriptions[0], u32(len(vertex_buffer_descriptions)),
+				&vertex_attributes[0], u32(len(vertex_attributes)),
+		},
+		depth_stencil_state = SDL.GPUDepthStencilState {
+			compare_op = .LESS_OR_EQUAL,
+			enable_depth_test = true,
+			enable_depth_write = true,
+		},
+		target_info = SDL.GPUGraphicsPipelineTargetInfo {
+			num_color_targets = 1,
+			color_target_descriptions = raw_data(color_target_desc),
+			depth_stencil_format = .D32_FLOAT,
+			has_depth_stencil_target = true,
+		},
+	})
+	return shader
+}
+
+gfx_make_line_shader :: proc(gfx: Gfx) -> Shader2 {
+	base_path := "Content/Shaders/3d/line"
+	shader_vert, shader_frag := LoadShader(gfx, base_path, {0, 0, 0, 3}, {1, 0, 0, 0})
+	defer SDL.ReleaseGPUShader(gfx.gpu, shader_vert)
+	defer SDL.ReleaseGPUShader(gfx.gpu, shader_frag)
+	color_target_desc := []SDL.GPUColorTargetDescription{
+		{ format = gfx.format },
+	}
+
+	vertex_buffer_descriptions := []SDL.GPUVertexBufferDescription {
+		{slot=0, pitch=12},
+		{slot=1, pitch=8},
+		{slot=2, pitch=16},
+		{slot=3, pitch=12},
+		{slot=4, pitch=12},
+	}
+	vertex_attributes := []SDL.GPUVertexAttribute {
+		{location = 0, buffer_slot = 0, format = .FLOAT3},
+		{location = 1, buffer_slot = 1, format = .FLOAT2},
+		{location = 2, buffer_slot = 2, format = .FLOAT4},
+		{location = 3, buffer_slot = 3, format = .FLOAT3},
+		{location = 4, buffer_slot = 4, format = .FLOAT3},
+	}
+
+	shader: Shader2
+	shader.pipeline = SDL.CreateGPUGraphicsPipeline(gfx.gpu, SDL.GPUGraphicsPipelineCreateInfo {
+		vertex_shader = shader_vert,
+		fragment_shader = shader_frag,
+		primitive_type = .TRIANGLESTRIP,
+		vertex_input_state = {
+				&vertex_buffer_descriptions[0], u32(len(vertex_buffer_descriptions)),
+				&vertex_attributes[0], u32(len(vertex_attributes)),
+		},
+		depth_stencil_state = SDL.GPUDepthStencilState {
+			compare_op = .LESS_OR_EQUAL,
+			enable_depth_test = true,
+			enable_depth_write = true,
+		},
+		target_info = SDL.GPUGraphicsPipelineTargetInfo {
+			num_color_targets = 1,
+			color_target_descriptions = raw_data(color_target_desc),
+			depth_stencil_format = .D32_FLOAT,
+			has_depth_stencil_target = true,
+		},
+	})
+	return shader;
+}
+
+gfx_make_env_shader :: proc(gfx: Gfx) -> Shader2 {
+	base_path := "Content/Shaders/3d/env"
+	shader_vert, shader_frag := LoadShader(gfx, base_path, {0, 0, 0, 1}, {1, 0, 0, 0})
+	defer SDL.ReleaseGPUShader(gfx.gpu, shader_vert)
+	defer SDL.ReleaseGPUShader(gfx.gpu, shader_frag)
+	color_target_desc := []SDL.GPUColorTargetDescription{{
+		format = gfx.format
+	}}
+	shader: Shader2
+	shader.pipeline = SDL.CreateGPUGraphicsPipeline(gfx.gpu, SDL.GPUGraphicsPipelineCreateInfo {
+		vertex_shader = shader_vert,
+		fragment_shader = shader_frag,
+		primitive_type = .TRIANGLESTRIP,
+		target_info = SDL.GPUGraphicsPipelineTargetInfo {
+			num_color_targets = 1,
+			color_target_descriptions = raw_data(color_target_desc),
+		},
+	})
+	return shader
+}
+
+
+gfx_destroy :: proc(gfx: Gfx) {
+	shaderc.compiler_release(gfx.compiler)
+	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.mesh_shader.pipeline)
+	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.line_shader.pipeline)
+	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.env_shader.pipeline)
+}
+
+ShaderStageInput :: struct {
+	num_samplers: u32,
+	num_storage_textures: u32,
+	num_storage_buffers: u32,
+	num_uniform_buffers: u32,
+}
+
+LoadShader :: proc(
+	gfx: Gfx, base_path: string, vertex_inputs, fragment_inputs: ShaderStageInput
+) -> (
+	vert, frag: ^SDL.GPUShader
+) {
+	log.info("loading shader:", base_path)
+	vert = CompLoadShader(gfx, fmt.ctprintf("%s.vert.glsl", base_path), .VERTEX, vertex_inputs)
+	frag = CompLoadShader(gfx, fmt.ctprintf("%s.frag.glsl", base_path), .FRAGMENT, fragment_inputs)
+	return vert, frag
+}
+
 
 
 CompLoadShader :: proc(
-	gpu: ^SDL.GPUDevice,
-	compiler: shaderc.compiler_t,
+	gfx: Gfx,
 	in_path: cstring,
 	in_stage: SDL.GPUShaderStage,
-	in_num_samplers: u32 = 0,
-	in_num_storage_tex: u32 = 0,
-	in_num_storage_bufs: u32 = 0,
-	in_num_uniform_bufs: u32 = 0,
+	inputs: ShaderStageInput,
 ) -> ^SDL.GPUShader {
-	log.info("loading shader:", in_path)
+
 	shader_size: uint = ---
 	shader_code := SDL.LoadFile(in_path, &shader_size)
 
@@ -42,13 +209,22 @@ CompLoadShader :: proc(
 	entry_point_name := "main"
 
 	compile_result := shaderc.compile_into_spv(
-		compiler,
+		gfx.compiler,
 		cstring(shader_code),
 		shader_size,
 		shader_kind,
 		in_path,
 		"main",
-		compile_options)
+		compile_options
+	)
+
+	num_errors := shaderc.result_get_num_errors(compile_result)
+	for error_idx in 0..<num_errors {
+		error := shaderc.result_get_error_message(compile_result)
+		log.error("Error while compiling shader:\n", error)
+	}
+
+
 	SDL.free(shader_code)
 
 	log.info("create gpushader:", in_path)
@@ -58,51 +234,19 @@ CompLoadShader :: proc(
 		entrypoint = "main",
 		format = {.SPIRV},
 		stage = in_stage,
-		num_samplers = in_num_samplers,
-		num_storage_textures = in_num_storage_tex,
-		num_storage_buffers = in_num_storage_bufs,
-		num_uniform_buffers = in_num_uniform_bufs,
+		num_samplers = inputs.num_samplers,
+		num_storage_textures = inputs.num_storage_textures,
+		num_storage_buffers = inputs.num_storage_buffers,
+		num_uniform_buffers = inputs.num_uniform_buffers,
 	}
 
-	shader := SDL.CreateGPUShader(gpu, shader_info)
+	shader := SDL.CreateGPUShader(gfx.gpu, shader_info)
 
 	shaderc.result_release(compile_result)
 
 	return shader
-
 }
 
-
-LoadShader :: proc(
-	gpu: ^SDL.GPUDevice, 
-	in_path: cstring, 
-	in_stage: SDL.GPUShaderStage, 
-	in_num_samplers: u32 = 0, 
-	in_num_storage_tex: u32 = 0, 
-	in_num_storage_bufs: u32 = 0, 
-	in_num_uniform_bufs: u32 = 0,
-) -> ^SDL.GPUShader {
-	log.info("loading shader:", in_path)
-	shader_size: uint = ---
-	// path_cstr := cstring(in_path)
-	shader_code := cast([^]u8) SDL.LoadFile(in_path, &shader_size)
-	shader_info := SDL.GPUShaderCreateInfo {
-		code_size = shader_size,
-		code = shader_code,
-		entrypoint = "main",
-		format = {.SPIRV},
-		stage = in_stage,
-		num_samplers = in_num_samplers,
-		num_storage_textures = in_num_storage_tex,
-		num_storage_buffers = in_num_storage_bufs,
-		num_uniform_buffers = in_num_uniform_bufs,
-	}
-
-	shader := SDL.CreateGPUShader(gpu, shader_info)
-	SDL.free(shader_code)
-
-	return shader
-}
 
 Texture :: struct {
 	size: [2]u32,

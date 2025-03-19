@@ -20,6 +20,10 @@ import "core:math/linalg/hlsl"
 main :: proc () {
 	context.logger = log.create_console_logger()
 
+	fsw, err_code := fsw_create()
+
+	err_code = fsw_add_dir(&fsw, ".")
+
 	log.info("hello")
 
 	log.info("SDL Init")
@@ -62,109 +66,14 @@ main :: proc () {
 
 	log.info("SDL GetGPUSwapchainTextureFormat")
 	window.format = SDL.GetGPUSwapchainTextureFormat(gpu_device, sdl_window)
+
+	gfx := gfx_create(gpu_device, window)
+	defer gfx_destroy(gfx)
+
 	log.info("ui_load_pipelines")
-	ui_load_pipelines(&window, gpu_device)
+	ui_load_pipelines(gfx, &window)
 	defer ui_unload_pipelines(&window, gpu_device)
 
-	compiler := shaderc.compiler_initialize()
-
-	mesh_pipeline: ^SDL.GPUGraphicsPipeline
-	{
-		shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/basic.vert.glsl", .VERTEX, 0, 0, 0, 2)
-		shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/basic.frag.glsl", .FRAGMENT, 4, 0, 0, 1)
-		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
-		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
-		color_target_desc := []SDL.GPUColorTargetDescription{{
-			format = window.format
-		}}
-
-		vertex_buffer_descriptions := []SDL.GPUVertexBufferDescription {
-			{slot=0, pitch=12},
-			{slot=1, pitch=8},
-			{slot=2, pitch=12},
-			{slot=3, pitch=16},
-		}
-		vertex_attributes := []SDL.GPUVertexAttribute {
-			{location = 0, buffer_slot = 0, format = .FLOAT3},
-			{location = 1, buffer_slot = 1, format = .FLOAT2},
-			{location = 2, buffer_slot = 2, format = .FLOAT3},
-			{location = 3, buffer_slot = 3, format = .FLOAT4},
-		}
-
-		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
-			vertex_shader = shader_vert,
-			fragment_shader = shader_frag,
-			vertex_input_state = {
-				&vertex_buffer_descriptions[0], u32(len(vertex_buffer_descriptions)),
-				&vertex_attributes[0], u32(len(vertex_attributes)),
-			},
-			depth_stencil_state = SDL.GPUDepthStencilState {
-				compare_op = .LESS_OR_EQUAL,
-				enable_depth_test = true,
-				enable_depth_write = true,
-			},
-			target_info = SDL.GPUGraphicsPipelineTargetInfo {
-				num_color_targets = 1,
-				color_target_descriptions = raw_data(color_target_desc),
-				depth_stencil_format = .D32_FLOAT,
-				has_depth_stencil_target = true,
-			},
-		}
-
-		mesh_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
-	}
-	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, mesh_pipeline)
-
-
-	line_pipeline: ^SDL.GPUGraphicsPipeline
-	{
-		shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/line.vert.glsl", .VERTEX, 0, 0, 0, 3)
-		shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/line.frag.glsl", .FRAGMENT, 1, 0, 0, 0)
-		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
-		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
-		color_target_desc := []SDL.GPUColorTargetDescription{{
-			format = window.format
-		}}
-
-		vertex_buffer_descriptions := []SDL.GPUVertexBufferDescription {
-			{slot=0, pitch=12}, 
-			{slot=1, pitch=8},
-			{slot=2, pitch=16},
-			{slot=3, pitch=12},
-			{slot=4, pitch=12},
-		}
-		vertex_attributes := []SDL.GPUVertexAttribute {
-			{location = 0, buffer_slot = 0, format = .FLOAT3},
-			{location = 1, buffer_slot = 1, format = .FLOAT2},
-			{location = 2, buffer_slot = 2, format = .FLOAT4},
-			{location = 3, buffer_slot = 3, format = .FLOAT3},
-			{location = 4, buffer_slot = 4, format = .FLOAT3},
-		}
-
-		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
-			vertex_shader = shader_vert,
-			fragment_shader = shader_frag,
-			primitive_type = .TRIANGLESTRIP,
-			vertex_input_state = {
-				&vertex_buffer_descriptions[0], u32(len(vertex_buffer_descriptions)),
-				&vertex_attributes[0], u32(len(vertex_attributes)),
-			},
-			depth_stencil_state = SDL.GPUDepthStencilState {
-				compare_op = .LESS_OR_EQUAL,
-				enable_depth_test = true,
-				enable_depth_write = true,
-			},
-			target_info = SDL.GPUGraphicsPipelineTargetInfo {
-				num_color_targets = 1,
-				color_target_descriptions = raw_data(color_target_desc),
-				depth_stencil_format = .D32_FLOAT,
-				has_depth_stencil_target = true,
-			},
-		}
-
-		line_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
-	}
-	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, line_pipeline)
 
 	line_x: LinePrimitive
 	primitive_append_vertex(&line_x, {position = {0, 0, 0}, color = {1, 0, 0, 1}})
@@ -182,29 +91,6 @@ main :: proc () {
 	line_z_mesh := mesh_from_line(gpu_device, line_z)
 
 
-	env_pipeline: ^SDL.GPUGraphicsPipeline
-	{
-		shader_vert := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/env.vert.glsl", .VERTEX, 0, 0, 0, 1)
-		shader_frag := CompLoadShader(gpu_device, compiler, "Content/Shaders/3d/env.frag.glsl", .FRAGMENT, 1, 0, 0, 0)
-		defer SDL.ReleaseGPUShader(gpu_device, shader_vert)
-		defer SDL.ReleaseGPUShader(gpu_device, shader_frag)
-		color_target_desc := []SDL.GPUColorTargetDescription{{
-			format = window.format
-		}}
-
-		pipeline_info := SDL.GPUGraphicsPipelineCreateInfo {
-			vertex_shader = shader_vert,
-			fragment_shader = shader_frag,
-			primitive_type = .TRIANGLESTRIP,
-			target_info = SDL.GPUGraphicsPipelineTargetInfo {
-				num_color_targets = 1,
-				color_target_descriptions = raw_data(color_target_desc),
-			},
-		}
-
-		env_pipeline = SDL.CreateGPUGraphicsPipeline(gpu_device, pipeline_info)
-	}
-	defer SDL.ReleaseGPUGraphicsPipeline(gpu_device, env_pipeline)
 
 
 	window.mui_ctx = new(mui.Context)
@@ -466,6 +352,11 @@ main :: proc () {
 			mui_process_sdl_event(window.mui_ctx, sdl_event)
 		}
 
+		for evt in fsw_get_events(&fsw) {
+			fmt.println(evt)
+		}
+
+
 		ticks := SDL.GetTicksNS()
 		delta_ticks := ticks - last_ticks
 		dt = f64(delta_ticks) * 1e-9
@@ -584,7 +475,7 @@ main :: proc () {
 		SDL.SetGPUViewport(mesh_render_pass, {0, 0, f32(window.size.x), f32(window.size.y), 0, 1})
 
 		// draw environment
-		SDL.BindGPUGraphicsPipeline(mesh_render_pass, env_pipeline)
+		SDL.BindGPUGraphicsPipeline(mesh_render_pass, gfx.env_shader.pipeline)
 		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
 
 		SDL.BindGPUFragmentSamplers(mesh_render_pass, 0, &global_sampler_bindings[0], u32(len(global_sampler_bindings)))
@@ -592,7 +483,7 @@ main :: proc () {
 		SDL.BindGPUFragmentSamplers(mesh_render_pass, 0, &global_sampler_bindings[0], u32(len(global_sampler_bindings)))
 
 		// draw axes
-		SDL.BindGPUGraphicsPipeline(mesh_render_pass, line_pipeline)
+		SDL.BindGPUGraphicsPipeline(mesh_render_pass, gfx.line_shader.pipeline)
 		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
 		SDL.PushGPUVertexUniformData(cmd_buf, 1, &identity, size_of(identity))
 
@@ -605,8 +496,9 @@ main :: proc () {
 		mesh_draw_verts(mesh_render_pass, line_z_mesh)
 
 
+
 		// draw meshes
-		SDL.BindGPUGraphicsPipeline(mesh_render_pass, mesh_pipeline)
+		SDL.BindGPUGraphicsPipeline(mesh_render_pass, gfx.mesh_shader.pipeline)
 		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
 
 		light_yaw += f32(dt)
