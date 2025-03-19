@@ -354,6 +354,7 @@ main :: proc () {
 
 		for evt in fsw_get_events(&fsw) {
 			fmt.println(evt)
+			gfx_on_file_changed(&gfx, evt.filename)
 		}
 
 

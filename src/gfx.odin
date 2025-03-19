@@ -13,6 +13,7 @@ import hlm "core:math/linalg/hlsl"
 import "core:fmt"
 import "core:log"
 import "core:mem"
+import "core:os"
 
 
 Gfx :: struct {
@@ -43,6 +44,46 @@ gfx_create :: proc(
 	gfx.line_shader = gfx_make_line_shader(gfx)
 	gfx.env_shader = gfx_make_env_shader(gfx)
 	return gfx
+}
+
+gfx_destroy :: proc(gfx: Gfx) {
+	shaderc.compiler_release(gfx.compiler)
+	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.mesh_shader.pipeline)
+	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.line_shader.pipeline)
+	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.env_shader.pipeline)
+}
+
+
+path_has_prefix :: proc(file_path, prefix: string) -> bool {
+	for idx in 0..<len(prefix) {
+		c1 := file_path[idx]
+		c2 := prefix[idx]
+		if file_path[idx] == prefix[idx] {
+			continue
+		}
+		if os.is_path_separator(c1) && os.is_path_separator(c2) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+
+gfx_on_file_changed :: proc(gfx: ^Gfx, file_path: string) {
+	if path_has_prefix(file_path, "Content/Shaders/3d/basic") {
+		gfx_release_shader(gfx^, gfx^.mesh_shader)
+		gfx.mesh_shader = gfx_make_mesh_shader(gfx^)
+	}
+	if path_has_prefix(file_path, "Content/Shaders/3d/line") {
+		gfx_release_shader(gfx^, gfx^.mesh_shader)
+		gfx.line_shader = gfx_make_mesh_shader(gfx^)
+	}
+}
+
+
+gfx_release_shader :: proc(gfx: Gfx, shader: Shader2) {
+	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, shader.pipeline)
 }
 
 
@@ -161,12 +202,6 @@ gfx_make_env_shader :: proc(gfx: Gfx) -> Shader2 {
 }
 
 
-gfx_destroy :: proc(gfx: Gfx) {
-	shaderc.compiler_release(gfx.compiler)
-	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.mesh_shader.pipeline)
-	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.line_shader.pipeline)
-	SDL.ReleaseGPUGraphicsPipeline(gfx.gpu, gfx.env_shader.pipeline)
-}
 
 ShaderStageInput :: struct {
 	num_samplers: u32,
@@ -185,8 +220,6 @@ LoadShader :: proc(
 	frag = CompLoadShader(gfx, fmt.ctprintf("%s.frag.glsl", base_path), .FRAGMENT, fragment_inputs)
 	return vert, frag
 }
-
-
 
 CompLoadShader :: proc(
 	gfx: Gfx,
