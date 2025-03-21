@@ -61,8 +61,10 @@ path_has_prefix :: proc(file_path, prefix: string) -> bool {
 		if file_path[idx] == prefix[idx] {
 			continue
 		}
+		when ODIN_OS == .Windows {
 		if os.is_path_separator(c1) && os.is_path_separator(c2) {
 			continue
+		}
 		}
 		return false
 	}
