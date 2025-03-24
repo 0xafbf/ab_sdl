@@ -7,33 +7,16 @@ import "core:os"
 import "core:slice"
 import "core:strings"
 
-import win32 "core:sys/windows"
 import "core:sys/linux"
 import "core:sys/posix"
 import "core:sys/unix"
 
 eprintf :: fmt.eprintf;
 
-//  events that are being whatched now.
-//  May change if needed
-FSW_WATCHING_EVENTS: win32.DWORD = (
-    win32.FILE_NOTIFY_CHANGE_FILE_NAME
-    | win32.FILE_NOTIFY_CHANGE_DIR_NAME
-    | win32.FILE_NOTIFY_CHANGE_LAST_WRITE
-)
-
-
 FSW :: struct {
     allocator : mem.Allocator,
     inotify_fd: linux.Fd,
-    iocp_handler: win32.HANDLE,
     watched_dir_paths: map[linux.Wd]string
-}
-
-FSW_ID :: struct {
-    overlapped: win32.OVERLAPPED,
-    handle: win32.HANDLE,
-    path: string
 }
 
 FSW_Event_Type :: enum {
@@ -49,12 +32,12 @@ FSW_Event :: struct {
     event: FSW_Event_Type
 }
 
-FSW_Loop_Type :: enum win32.DWORD {
-    NONBLOCKING = 0,
-    BLOCKING = win32.INFINITE
+FSW_Loop_Type :: enum u32 {
+    NONBLOCKING,
+    BLOCKING,
 }
 
-fsw_create :: proc ( buffer_size:= 16 * 1024, allocator:= context.allocator ) -> (FSW, win32.DWORD) {
+fsw_create :: proc ( buffer_size:= 16 * 1024, allocator:= context.allocator ) -> (FSW, int) {
 
     fd, errno := linux.inotify_init();
 
@@ -64,7 +47,7 @@ fsw_create :: proc ( buffer_size:= 16 * 1024, allocator:= context.allocator ) ->
     }, 0;
 }
 
-fsw_add_dir :: proc (fsw: ^FSW, dir: string) -> u32 {
+fsw_add_dir :: proc (fsw: ^FSW, dir: string) -> int {
 
     path := strings.clone_to_cstring(dir, context.temp_allocator)
 
