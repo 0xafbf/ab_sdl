@@ -326,9 +326,13 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface, format: SD
 		texture_format = .R8G8B8A8_UNORM
 		exact_match = false
 		bytes_per_pixel = 4
+	} else if surface.format == .ABGR8888 {
+		texture_format = .R8G8B8A8_UNORM
+		exact_match = false
+		bytes_per_pixel = 4
 	}
 
-	assert(format != .INVALID)
+	assert(texture_format != .INVALID)
 	result: Texture
 	result.size = {u32(surface.w), u32(surface.h)}
 	result.surface = surface
@@ -353,12 +357,21 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface, format: SD
 	if exact_match {
 		mem.copy_non_overlapping(transfer_buffer_mem, &mui.default_atlas_alpha[0], int(buffer_size));
 	} else {
-		rgb :: [3]u8
-		rgba :: [4]u8
-		tgt_mem := ([^]rgba)(transfer_buffer_mem)
-		src_mem := ([^]rgb)(surface.pixels)
-		for idx in 0 ..< num_pixels {
-			tgt_mem[idx].xyz = src_mem[idx]
+		if surface.format == .RGB24 {
+			rgb :: [3]u8
+			rgba :: [4]u8
+			tgt_mem := ([^]rgba)(transfer_buffer_mem)
+			src_mem := ([^]rgb)(surface.pixels)
+			for idx in 0 ..< num_pixels {
+				tgt_mem[idx].xyz = src_mem[idx]
+			}
+		} else if surface.format == .ABGR8888 {
+			vec4u8 :: [4]u8
+			tgt_mem := ([^]vec4u8)(transfer_buffer_mem)
+			src_mem := ([^]vec4u8)(surface.pixels)
+			for idx in 0 ..< num_pixels {
+				tgt_mem[idx].xyzw = src_mem[idx].wzyx
+			}
 		}
 	}
 	SDL.UnmapGPUTransferBuffer(gpu, result.transfer_buffer)
@@ -385,7 +398,9 @@ MeshBuffer :: struct {
 	transfer_buffer: ^SDL.GPUTransferBuffer,
 	data: union {[]f32, []u32}
 }
+
 meshbuffer_create :: proc (gpu: ^SDL.GPUDevice, field: []$T, usage: SDL.GPUBufferUsageFlags) -> MeshBuffer {
+	fmt.println("meshbuffer_create")
 	buf: MeshBuffer
 	buf.size = u32(len(field) * size_of(T))
 	buf.gpu_buffer = SDL.CreateGPUBuffer(gpu, {

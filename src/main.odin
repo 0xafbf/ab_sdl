@@ -207,7 +207,13 @@ main :: proc () {
 	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
 	log.info("submitted copy")
 
-	helmet_path :cstring= "Content/sample/damaged_helmet.glb"
+
+
+	scene_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
+	scene, mesh_instances := scene_load(scene_path, gpu_device)
+
+	/*
+	helmet_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
 	helmet := mesh_load(helmet_path, gpu_device, false)
 	helmet_correct := mesh_load(helmet_path, gpu_device, true)
 	defer mesh_free(&helmet, gpu_device)
@@ -217,65 +223,10 @@ main :: proc () {
 			mesh = &helmet,
 			transform = PosRotScale{
 				position = {0, 0, 0},
-				rotation = {3.14, 0, 0},
+				rotation = {1.57, 0, 0},
 				scale = {1,1,1},
 			},
 		},
-	}
-	instances_b := []MeshInstance3D {
-		{
-			mesh = &helmet_correct,
-			transform = PosRotScale{
-				position = {0, 0, 0},
-				rotation = {3.14, 0, 0},
-				scale = {1,1,1},
-			},
-		},
-	}
-	instances := []MeshInstance3D {
-		{
-			mesh = &helmet,
-			transform = PosRotScale{
-				position = {0, 0, 0},
-				rotation = {3.14, 0, 0},
-				scale = {1,1,1},
-			},
-		},
-		{
-			mesh = &helmet,
-			transform = PosRotScale{
-				position = {4, 0, 0},
-				rotation = {3.14, 0, 0},
-				scale = {1,1,1},
-			},
-		},
-		{
-			mesh = &helmet,
-			transform = PosRotScale{
-				position = {0, 4, 0},
-				rotation = {0, 3.14, 0},
-				scale = {1,1,1},
-			},
-		},
-		{
-			mesh = &helmet,
-			transform = PosRotScale{
-				position = {0, 0, 4},
-				rotation = {0, 0, 3.14},
-				scale = {1,1,1},
-			},
-		},
-	}
-
-	log.info("instances")
-
-	for &instance in instances {
-		instance_trs : PosRotScale = instance.transform.(PosRotScale)
-		instance_rot := instance_trs.rotation
-		quat := linalg.quaternion_from_euler_angles(instance_rot.x, instance_rot.y, instance_rot.z, .XYZ)
-
-		instance.global_transform = linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
-
 	}
 
 	for &instance in instances_a {
@@ -286,16 +237,7 @@ main :: proc () {
 		instance.global_transform = linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
 
 	}
-
-	for &instance in instances_b {
-		instance_trs : PosRotScale = instance.transform.(PosRotScale)
-		instance_rot := instance_trs.rotation
-		quat := linalg.quaternion_from_euler_angles(instance_rot.x, instance_rot.y, instance_rot.z, .XYZ)
-
-		instance.global_transform = linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
-
-	}
-
+	*/
 
 	pitch := f32(math.TAU / 12)
 	yaw := f32(math.TAU / 8)
@@ -499,8 +441,6 @@ main :: proc () {
 
 
 		// draw meshes
-		SDL.BindGPUGraphicsPipeline(mesh_render_pass, gfx.mesh_shader.pipeline)
-		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
 
 		light_yaw += f32(dt)
 		light_data := [4]f32 {
@@ -514,19 +454,19 @@ main :: proc () {
 
 		SDL.BindGPUFragmentSamplers(mesh_render_pass, 3, &global_sampler_bindings[0], u32(len(global_sampler_bindings)))
 
-		if bool_value {
+		SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
+
+		SDL.BindGPUGraphicsPipeline(mesh_render_pass, gfx.mesh_shader.pipeline)
+		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
+		/*
 			for &instance in instances_a {
 				SDL.PushGPUVertexUniformData(cmd_buf, 1, &instance.global_transform, size_of(instance.global_transform))
 				SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
 				mesh_draw(mesh_render_pass, instance.mesh^)
 			}
-		} else {
-			for &instance in instances_b {
-				SDL.PushGPUVertexUniformData(cmd_buf, 1, &instance.global_transform, size_of(instance.global_transform))
-				SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
-				mesh_draw(mesh_render_pass, instance.mesh^)
-			}
-		}
+     	*/
+
+		node3d_draw(mesh_instances, cmd_buf, mesh_render_pass)
 
 		SDL.EndGPURenderPass(mesh_render_pass)
 
