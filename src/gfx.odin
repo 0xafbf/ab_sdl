@@ -370,7 +370,8 @@ ab_create_texture :: proc(gpu: ^SDL.GPUDevice, surface: ^SDL.Surface, format: SD
 			tgt_mem := ([^]vec4u8)(transfer_buffer_mem)
 			src_mem := ([^]vec4u8)(surface.pixels)
 			for idx in 0 ..< num_pixels {
-				tgt_mem[idx].xyzw = src_mem[idx].wzyx
+				//tgt_mem[idx].xyzw = src_mem[idx].wzyx
+				tgt_mem[idx] = src_mem[idx]
 			}
 		}
 	}

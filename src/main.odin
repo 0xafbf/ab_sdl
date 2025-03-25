@@ -210,6 +210,7 @@ main :: proc () {
 
 
 	scene_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
+	//scene_path :cstring= "Content/sample/damaged_helmet.glb"
 	scene, mesh_instances := scene_load(scene_path, gpu_device)
 
 	/*
@@ -442,7 +443,9 @@ main :: proc () {
 
 		// draw meshes
 
-		light_yaw += f32(dt)
+		if bool_value {
+			light_yaw += f32(dt)
+		}
 		light_data := [4]f32 {
 			math.cos(light_pitch) * math.cos(light_yaw),
 			math.cos(light_pitch) * math.sin(light_yaw),

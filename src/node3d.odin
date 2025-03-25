@@ -154,6 +154,7 @@ scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D,
 	ctx.copy_pass = SDL.BeginGPUCopyPass(copy_cmd_buf)
 
 	ab_texture_upload(ctx.white_tex, ctx.copy_pass)
+	ab_texture_upload(ctx.normal_tex, ctx.copy_pass)
 
 	assert(len(data.scenes) == 1)
 	assert(&data.scenes[0] == data.scene)
@@ -163,8 +164,19 @@ scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D,
 	fmt.println("nodes ", len(nodes))
 
 	mesh_instances: [dynamic]MeshInstance3D
-
+	root_node := Node3D{}
 	root_children := make([]^Node3D, len(nodes))
+	root_node.children = root_children
+
+	root_node.transform = PosRotScale {
+		scale = 1,
+		rotation = {1.57, 0, 0},
+	}
+	root_trs := root_node.transform.(PosRotScale)
+	root_rot := root_trs.rotation
+	root_quat := linalg.quaternion_from_euler_angles(root_rot.x, root_rot.y, root_rot.z, .XYZ)
+	root_node.global_transform = linalg.matrix4_from_trs(root_trs.position, root_quat, root_trs.scale)
+
 	idx := 0
 	for gltf_node in nodes {
 		fmt.println("loading node", idx)
@@ -177,7 +189,33 @@ scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D,
 			ab_mesh := ctx.meshes[mesh_idx]
 			append(&mesh_instances, MeshInstance3D{ab_node, ab_mesh})
 		}
-		ab_node.global_transform = 1
+		trs := PosRotScale {
+			scale = 1,
+		}
+
+		if gltf_node.has_translation {
+			trs.position = gltf_node.translation
+		}
+		if gltf_node.has_rotation {
+			rot := gltf_node.rotation
+			quat := quaternion(x=rot.x, y=rot.y, z=rot.z, w=rot.w)
+			rx, ry, rz := linalg.euler_angles_from_quaternion(quat, .XYZ)
+			trs.rotation = {rx, ry, rz}
+		}
+		if gltf_node.has_scale {
+			trs.scale = gltf_node.scale
+		}
+
+		fmt.println(trs)
+		ab_node.transform = trs
+
+
+		rot := trs.rotation
+		quat := linalg.quaternion_from_euler_angles(rot.x, rot.y, rot.z, .XYZ)
+
+		node_mat := linalg.matrix4_from_trs(trs.position, quat, trs.scale)
+		ab_node.global_transform = root_node.global_transform * node_mat
+
 		root_children[idx] = ab_node
 		idx += 1
 	}
@@ -185,8 +223,6 @@ scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D,
 	SDL.EndGPUCopyPass(ctx.copy_pass)
 	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
 
-	root_node := Node3D{}
-	root_node.children = root_children
 	return root_node, mesh_instances[:]
 }
 
