@@ -122,7 +122,9 @@ mesh_free :: proc(mesh: ^Mesh, gpu: ^SDL.GPUDevice) {
 gltf_context :: struct {
 	materials: []^MaterialPBR,
 	meshes: []^Mesh,
-
+	copy_pass: ^SDL.GPUCopyPass,
+	normal_tex: Texture,
+	white_tex: Texture,
 }
 
 
@@ -142,6 +144,16 @@ scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D,
 	gltf_meshes := data.meshes
 	ctx.meshes = make([]^Mesh, len(gltf_meshes))
 
+	white := [][4]f32 {{1.0, 1.0, 1.0, 1.0}}
+	normal := [][4]f32 {{0.5, 0.5, 1.0, 1.0}}
+
+	ctx.white_tex = ab_create_texture_raw(gpu_device, {1, 1}, white)
+	ctx.normal_tex = ab_create_texture_raw(gpu_device, {1, 1}, normal)
+
+	copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
+	ctx.copy_pass = SDL.BeginGPUCopyPass(copy_cmd_buf)
+
+	ab_texture_upload(ctx.white_tex, ctx.copy_pass)
 
 	assert(len(data.scenes) == 1)
 	assert(&data.scenes[0] == data.scene)
@@ -165,9 +177,13 @@ scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D,
 			ab_mesh := ctx.meshes[mesh_idx]
 			append(&mesh_instances, MeshInstance3D{ab_node, ab_mesh})
 		}
+		ab_node.global_transform = 1
 		root_children[idx] = ab_node
 		idx += 1
 	}
+
+	SDL.EndGPUCopyPass(ctx.copy_pass)
+	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
 
 	root_node := Node3D{}
 	root_node.children = root_children
@@ -177,9 +193,12 @@ scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D,
 node3d_draw :: proc(instances: []MeshInstance3D, cmd_buf: ^SDL.GPUCommandBuffer, render_pass: ^SDL.GPURenderPass) {
 	for instance in instances {
 		node := instance.node
-		mesh := instance.mesh
+		SDL.PushGPUVertexUniformData(cmd_buf, 1, &node.global_transform, size_of(node.global_transform))
 
-		SDL.PushGPUVertexUniformData(cmd_buf, 1, &node.global_transform, size_of(instance.global_transform))
+		mesh := instance.mesh
+		for primitive in mesh.primitives {
+			primitive_draw(render_pass, primitive)
+		}
 	}
 }
 
@@ -210,6 +229,7 @@ load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gpu_
 			new_attribute.buffer = meshbuffer_create(gpu_device, buffer, {.VERTEX})
 			new_attribute.buffer.data = buffer
 
+			meshbuffer_upload(new_attribute.buffer, ctx.copy_pass)
 
 			new_primitive.attributes[attribute_type] = new_attribute
 		}
@@ -221,6 +241,7 @@ load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gpu_
 		num_indices = cgltf.accessor_unpack_indices(gltf_primitive.indices, &indices[0], 4, num_indices)
 		new_primitive.indices = meshbuffer_create(gpu_device, indices, {.INDEX})
 		new_primitive.indices.data = indices
+		meshbuffer_upload(new_primitive.indices, ctx.copy_pass)
 
 		fmt.println("    generating tangents")
 		if new_primitive.attributes[.TANGENT].buffer.size == 0 {
@@ -231,6 +252,7 @@ load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gpu_
 				new_primitive.attributes[.NORMAL].buffer.data.([]f32),
 			)
 			new_primitive.attributes[.TANGENT].buffer = meshbuffer_create(gpu_device, buf_tangents, {.VERTEX})
+			meshbuffer_upload(new_primitive.attributes[.TANGENT].buffer, ctx.copy_pass)
 		}
 
 
@@ -252,29 +274,35 @@ load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gpu_
 
 load_material :: proc(data: ^cgltf.data, ctx: ^gltf_context, mat: ^cgltf.material, gpu_device: ^SDL.GPUDevice) -> ^MaterialPBR{
 	new_mat := new(MaterialPBR)
-	fmt.println("a")
 	assert(bool(mat.has_pbr_metallic_roughness))
 	pbr := mat.pbr_metallic_roughness
 
-	base_color := load_cgltf_texture(pbr.base_color_texture)
-	fmt.println("b")
-	new_mat.base_color_tex = ab_create_texture(gpu_device, base_color, .R8G8B8A8_UNORM_SRGB)
-	fmt.println("c")
+	if pbr.base_color_texture.texture != nil {
+		base_color := load_cgltf_texture(pbr.base_color_texture)
+		new_mat.base_color_tex = ab_create_texture(gpu_device, base_color, .R8G8B8A8_UNORM_SRGB)
+		ab_texture_upload(new_mat.base_color_tex, ctx.copy_pass)
+	} else {
+		new_mat.base_color_tex = ctx.white_tex
+	}
 
 	if pbr.metallic_roughness_texture.texture != nil {
 		metallic_roughness_texture := load_cgltf_texture(pbr.metallic_roughness_texture)
-		fmt.println("d")
 		new_mat.metal_rough_tex = ab_create_texture(gpu_device,  metallic_roughness_texture, .R8G8B8A8_UNORM)
-		fmt.println("e")
+		ab_texture_upload(new_mat.metal_rough_tex, ctx.copy_pass)
+	} else {
+		new_mat.metal_rough_tex = ctx.white_tex
 	}
 
 	if mat.normal_texture.texture != nil {
 		normal_texture := load_cgltf_texture(mat.normal_texture)
-		fmt.println("f")
 		new_mat.normal_tex = ab_create_texture(gpu_device,  normal_texture, .R8G8B8A8_UNORM)
+		ab_texture_upload(new_mat.normal_tex, ctx.copy_pass)
+	} else {
+		new_mat.normal_tex = ctx.normal_tex
 	}
 
-	fmt.println("g")
+	new_mat.sampler = SDL.CreateGPUSampler(gpu_device, SDL.GPUSamplerCreateInfo{})
+
 
 	return new_mat
 }
@@ -500,35 +528,46 @@ make_tangents :: proc(vertices: []f32, uvs: []f32, indices: []u32, normals: []f3
 
 primitive_draw :: proc(render_pass: ^SDL.GPURenderPass, primitive: MeshPrimitive) {
 	//SDL.BindGPUGraphicsPipeline(render_pass, shader.pipeline)
+	mat := primitive.material
 	sampler_bindings := []SDL.GPUTextureSamplerBinding {
 		{
-			texture = mesh.base_color_tex.texture,
-			sampler = mesh.sampler,
+			texture = mat.base_color_tex.texture,
+			sampler = mat.sampler,
 		},
 		{
-			texture = mesh.metal_rough_tex.texture,
-			sampler = mesh.sampler,
+			texture = mat.metal_rough_tex.texture,
+			sampler = mat.sampler,
 		},
 		{
-			texture = mesh.normal_tex.texture,
-			sampler = mesh.sampler,
+			texture = mat.normal_tex.texture,
+			sampler = mat.sampler,
 		},
 	}
 	SDL.BindGPUFragmentSamplers(render_pass, 0, &sampler_bindings[0], u32(len(sampler_bindings)))
-
+	/*
+	if mat.base_color_tex.texture != nil {
+		SDL.BindGPUFragmentSamplers(render_pass, 0, &sampler_bindings[0], 1)
+	}
+	if mat.metal_rough_tex.texture != nil {
+		SDL.BindGPUFragmentSamplers(render_pass, 1, &sampler_bindings[1], 1)
+	}
+	if mat.normal_tex.texture != nil {
+		SDL.BindGPUFragmentSamplers(render_pass, 2, &sampler_bindings[2], 1)
+	}
+	*/
 
 	bindings := []SDL.GPUBufferBinding{
-		{ buffer = mesh.buf_mesh_pos.gpu_buffer, offset = 0 },
-		{ buffer = mesh.buf_mesh_uv.gpu_buffer, offset = 0 },
-		{ buffer = mesh.buf_mesh_normal.gpu_buffer, offset = 0 },
-		{ buffer = mesh.buf_mesh_tangent.gpu_buffer, offset = 0 },
+		{ buffer = primitive.attributes[.POSITION].buffer.gpu_buffer, offset = 0 },
+		{ buffer = primitive.attributes[.TEXCOORD].buffer.gpu_buffer, offset = 0 },
+		{ buffer = primitive.attributes[.NORMAL].buffer.gpu_buffer, offset = 0 },
+		{ buffer = primitive.attributes[.TANGENT].buffer.gpu_buffer, offset = 0 },
 	}
 
 	SDL.BindGPUVertexBuffers(render_pass, 0, &bindings[0], u32(len(bindings)))
-	SDL.BindGPUIndexBuffer(render_pass, {mesh.buf_mesh_idx.gpu_buffer, 0}, ._32BIT)
+	SDL.BindGPUIndexBuffer(render_pass, {primitive.indices.gpu_buffer, 0}, ._32BIT)
 
 	// SDL.DrawGPUPrimitives(render_pass, u32(len(indices)), 1, 0, 0)
-	SDL.DrawGPUIndexedPrimitives(render_pass, mesh.buf_mesh_idx.size/4, 1, 0, 0, 0)
+	SDL.DrawGPUIndexedPrimitives(render_pass, primitive.indices.size/4, 1, 0, 0, 0)
 	// SDL.DrawGPUPrimitives(render_pass, 12, 1, 0, 0)
 }
 
