@@ -83,11 +83,20 @@ MeshPrimitive :: struct {
 	material: ^MaterialPBR,
 }
 
+AlphaMode :: enum {
+	OPAQUE,
+	BLEND,
+	MASK,
+}
+
 MaterialPBR :: struct {
 	base_color_tex: Texture,
 	metal_rough_tex: Texture,
 	normal_tex: Texture,
 	sampler: ^SDL.GPUSampler,
+
+	alpha_mode: AlphaMode,
+	alpha_cutoff: f32,
 }
 
 Mesh :: struct {
@@ -310,6 +319,15 @@ load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gpu_
 
 load_material :: proc(data: ^cgltf.data, ctx: ^gltf_context, mat: ^cgltf.material, gpu_device: ^SDL.GPUDevice) -> ^MaterialPBR{
 	new_mat := new(MaterialPBR)
+
+	fmt.println("mat:", mat)
+	if mat.alpha_mode == .opaque { new_mat.alpha_mode = .OPAQUE }
+	else if mat.alpha_mode == .blend { new_mat.alpha_mode = .BLEND }
+	else if mat.alpha_mode == .mask {
+		new_mat.alpha_mode = .MASK
+		new_mat.alpha_cutoff = mat.alpha_cutoff
+	}
+
 	assert(bool(mat.has_pbr_metallic_roughness))
 	pbr := mat.pbr_metallic_roughness
 
