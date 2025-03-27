@@ -46,17 +46,18 @@ Asset :: struct {
 	path: string,
 	derived: any,
 }
-
+/*
 Shader :: struct {
 	using asset: Asset,
 	code: []u8,
 }
-
+*/
 
 MaterialParameter :: struct {
 	name: string,
 	value: union { f32, [2]f32, [3]f32, [4]f32 },
 }
+
 
 Material :: struct {
 	using asset: Asset,
@@ -97,6 +98,8 @@ MaterialPBR :: struct {
 
 	alpha_mode: AlphaMode,
 	alpha_cutoff: f32,
+
+	pipeline: ^Pipeline
 }
 
 Mesh :: struct {
@@ -137,7 +140,8 @@ gltf_context :: struct {
 }
 
 
-scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D, out_mesh_instances: []MeshInstance3D) {
+scene_load :: proc(path: cstring, gfx: Gfx) -> (scene: Node3D, out_mesh_instances: []MeshInstance3D) {
+	gpu_device := gfx.gpu
 	data: ^cgltf.data
 	result: cgltf.result
 
@@ -193,7 +197,7 @@ scene_load :: proc(path: cstring, gpu_device: ^SDL.GPUDevice) -> (scene: Node3D,
 		if gltf_node.mesh != nil {
 			mesh_idx := (uintptr(gltf_node.mesh) - uintptr(&data.meshes[0])) / size_of(cgltf.mesh)
 			if ctx.meshes[mesh_idx] == nil {
-				ctx.meshes[mesh_idx] = load_mesh(data, ctx, gltf_node.mesh, gpu_device)
+				ctx.meshes[mesh_idx] = load_mesh(data, ctx, gltf_node.mesh, gfx)
 			}
 			ab_mesh := ctx.meshes[mesh_idx]
 			append(&mesh_instances, MeshInstance3D{ab_node, ab_mesh})
@@ -248,7 +252,8 @@ node3d_draw :: proc(instances: []MeshInstance3D, cmd_buf: ^SDL.GPUCommandBuffer,
 }
 
 
-load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gpu_device: ^SDL.GPUDevice) -> ^Mesh{
+load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gfx: Gfx) -> ^Mesh{
+	gpu_device := gfx.gpu
 	new_mesh := new(Mesh)
 	num_primitives := len(mesh.primitives)
 	new_mesh.primitives = make([]MeshPrimitive, num_primitives)
@@ -304,7 +309,7 @@ load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gpu_
 		fmt.println("    loading material")
 		material_idx := (uintptr(gltf_primitive.material) - uintptr(raw_data(data.materials))) / size_of(cgltf.material)
 		if ctx.materials[material_idx] == nil {
-			ctx.materials[material_idx] = load_material(data, ctx, gltf_primitive.material, gpu_device)
+			ctx.materials[material_idx] = load_material(data, ctx, gltf_primitive.material, gfx)
 		}
 		new_primitive.material = ctx.materials[material_idx]
 		fmt.println("    end loading material")
@@ -317,7 +322,8 @@ load_mesh :: proc(data: ^cgltf.data, ctx: ^gltf_context, mesh: ^cgltf.mesh, gpu_
 	return new_mesh
 }
 
-load_material :: proc(data: ^cgltf.data, ctx: ^gltf_context, mat: ^cgltf.material, gpu_device: ^SDL.GPUDevice) -> ^MaterialPBR{
+load_material :: proc(data: ^cgltf.data, ctx: ^gltf_context, mat: ^cgltf.material, gfx: Gfx) -> ^MaterialPBR{
+	gpu_device := gfx.gpu
 	new_mat := new(MaterialPBR)
 
 	fmt.println("mat:", mat)
@@ -357,6 +363,7 @@ load_material :: proc(data: ^cgltf.data, ctx: ^gltf_context, mat: ^cgltf.materia
 
 	new_mat.sampler = SDL.CreateGPUSampler(gpu_device, SDL.GPUSamplerCreateInfo{})
 
+	new_mat.pipeline = gfx_make_mesh_pipeline(gfx)
 
 	return new_mat
 }
@@ -627,35 +634,39 @@ primitive_draw :: proc(render_pass: ^SDL.GPURenderPass, primitive: MeshPrimitive
 
 mesh_draw :: proc(render_pass: ^SDL.GPURenderPass, mesh: Mesh) {
 
-	bindings := []SDL.GPUBufferBinding{
-		{ buffer = mesh.buf_mesh_pos.gpu_buffer, offset = 0 },
-		{ buffer = mesh.buf_mesh_uv.gpu_buffer, offset = 0 },
-		{ buffer = mesh.buf_mesh_normal.gpu_buffer, offset = 0 },
-		{ buffer = mesh.buf_mesh_tangent.gpu_buffer, offset = 0 },
+	for primitive in mesh.primitives {
+		SDL.BindGPUGraphicsPipeline(render_pass, primitive.material.pipeline.pipeline)
+
+		bindings := []SDL.GPUBufferBinding{
+			{ buffer = mesh.buf_mesh_pos.gpu_buffer, offset = 0 },
+			{ buffer = mesh.buf_mesh_uv.gpu_buffer, offset = 0 },
+			{ buffer = mesh.buf_mesh_normal.gpu_buffer, offset = 0 },
+			{ buffer = mesh.buf_mesh_tangent.gpu_buffer, offset = 0 },
+		}
+
+		SDL.BindGPUVertexBuffers(render_pass, 0, &bindings[0], u32(len(bindings)))
+		SDL.BindGPUIndexBuffer(render_pass, {mesh.buf_mesh_idx.gpu_buffer, 0}, ._32BIT)
+
+		sampler_bindings := []SDL.GPUTextureSamplerBinding {
+			{
+				texture = mesh.base_color_tex.texture,
+				sampler = mesh.sampler,
+			},
+			{
+				texture = mesh.metal_rough_tex.texture,
+				sampler = mesh.sampler,
+			},
+			{
+				texture = mesh.normal_tex.texture,
+				sampler = mesh.sampler,
+			},
+		}
+		SDL.BindGPUFragmentSamplers(render_pass, 0, &sampler_bindings[0], u32(len(sampler_bindings)))
+
+		// SDL.DrawGPUPrimitives(render_pass, u32(len(indices)), 1, 0, 0)
+		SDL.DrawGPUIndexedPrimitives(render_pass, mesh.buf_mesh_idx.size/4, 1, 0, 0, 0)
+		// SDL.DrawGPUPrimitives(render_pass, 12, 1, 0, 0)
 	}
-
-	SDL.BindGPUVertexBuffers(render_pass, 0, &bindings[0], u32(len(bindings)))
-	SDL.BindGPUIndexBuffer(render_pass, {mesh.buf_mesh_idx.gpu_buffer, 0}, ._32BIT)
-
-	sampler_bindings := []SDL.GPUTextureSamplerBinding {
-		{
-			texture = mesh.base_color_tex.texture,
-			sampler = mesh.sampler,
-		},
-		{
-			texture = mesh.metal_rough_tex.texture,
-			sampler = mesh.sampler,
-		},
-		{
-			texture = mesh.normal_tex.texture,
-			sampler = mesh.sampler,
-		},
-	}
-	SDL.BindGPUFragmentSamplers(render_pass, 0, &sampler_bindings[0], u32(len(sampler_bindings)))
-
-	// SDL.DrawGPUPrimitives(render_pass, u32(len(indices)), 1, 0, 0)
-	SDL.DrawGPUIndexedPrimitives(render_pass, mesh.buf_mesh_idx.size/4, 1, 0, 0, 0)
-	// SDL.DrawGPUPrimitives(render_pass, 12, 1, 0, 0)
 }
 
 mesh_draw_verts :: proc(render_pass: ^SDL.GPURenderPass, mesh: Mesh) {

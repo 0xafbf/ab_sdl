@@ -71,7 +71,7 @@ main :: proc () {
 	defer gfx_destroy(gfx)
 
 	log.info("ui_load_pipelines")
-	ui_load_pipelines(gfx, &window)
+	ui_load_pipelines(&gfx, &window)
 	defer ui_unload_pipelines(&window, gpu_device)
 
 
@@ -211,7 +211,7 @@ main :: proc () {
 
 	scene_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
 	//scene_path :cstring= "Content/sample/damaged_helmet.glb"
-	scene, mesh_instances := scene_load(scene_path, gpu_device)
+	scene, mesh_instances := scene_load(scene_path, gfx)
 
 	/*
 	helmet_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
@@ -459,7 +459,7 @@ main :: proc () {
 
 		SDL.PushGPUFragmentUniformData(cmd_buf, 0, &light_data, size_of(light_data))
 
-		SDL.BindGPUGraphicsPipeline(mesh_render_pass, gfx.mesh_shader.pipeline)
+//		SDL.BindGPUGraphicsPipeline(mesh_render_pass, gfx.mesh_shader.pipeline)
 		SDL.PushGPUVertexUniformData(cmd_buf, 0, &uniform0, size_of(uniform0))
 		/*
 			for &instance in instances_a {

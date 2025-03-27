@@ -32,7 +32,7 @@ DrawContext :: struct {
 	render_pass: ^SDL.GPURenderPass
 }
 
-ui_load_pipelines :: proc(gfx: Gfx, window: ^WindowData) {
+ui_load_pipelines :: proc(gfx: ^Gfx, window: ^WindowData) {
 
 	ui_rect_shader_vert, ui_rect_shader_frag := LoadShader(gfx, "Content/Shaders/ui/rect", {0, 0, 0, 1}, {0, 0, 0, 1})
 
