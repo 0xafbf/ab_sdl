@@ -67,6 +67,7 @@ void main() {
     vec4 env_color = texture(u_environment, env_uv);
     frag_color.xyz += env_color.xyz * shine * 0.02;
 
+    frag_color.w = color.w;
 
     //frag_color.xyz = normal;
     //frag_color.xyz = v_tangent.xyz;

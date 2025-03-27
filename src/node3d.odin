@@ -363,7 +363,7 @@ load_material :: proc(data: ^cgltf.data, ctx: ^gltf_context, mat: ^cgltf.materia
 
 	new_mat.sampler = SDL.CreateGPUSampler(gpu_device, SDL.GPUSamplerCreateInfo{})
 
-	new_mat.pipeline = gfx_make_mesh_pipeline(gfx)
+	new_mat.pipeline = gfx_make_mesh_pipeline(gfx, gfx.mesh_shader, new_mat.alpha_mode, new_mat.alpha_cutoff)
 
 	return new_mat
 }
@@ -588,7 +588,7 @@ make_tangents :: proc(vertices: []f32, uvs: []f32, indices: []u32, normals: []f3
 }
 
 primitive_draw :: proc(render_pass: ^SDL.GPURenderPass, primitive: MeshPrimitive) {
-	//SDL.BindGPUGraphicsPipeline(render_pass, shader.pipeline)
+	SDL.BindGPUGraphicsPipeline(render_pass, primitive.material.pipeline.pipeline)
 	mat := primitive.material
 	sampler_bindings := []SDL.GPUTextureSamplerBinding {
 		{
@@ -605,17 +605,6 @@ primitive_draw :: proc(render_pass: ^SDL.GPURenderPass, primitive: MeshPrimitive
 		},
 	}
 	SDL.BindGPUFragmentSamplers(render_pass, 0, &sampler_bindings[0], u32(len(sampler_bindings)))
-	/*
-	if mat.base_color_tex.texture != nil {
-		SDL.BindGPUFragmentSamplers(render_pass, 0, &sampler_bindings[0], 1)
-	}
-	if mat.metal_rough_tex.texture != nil {
-		SDL.BindGPUFragmentSamplers(render_pass, 1, &sampler_bindings[1], 1)
-	}
-	if mat.normal_tex.texture != nil {
-		SDL.BindGPUFragmentSamplers(render_pass, 2, &sampler_bindings[2], 1)
-	}
-	*/
 
 	bindings := []SDL.GPUBufferBinding{
 		{ buffer = primitive.attributes[.POSITION].buffer.gpu_buffer, offset = 0 },

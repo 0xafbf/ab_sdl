@@ -40,7 +40,7 @@ Shader :: struct {
 	vertex_inputs: ShaderStageInput,
 	fragment_shader: ^SDL.GPUShader,
 	fragment_inputs: ShaderStageInput,
-	pipelines: [dynamic]Material,
+	pipelines: [dynamic]^Pipeline,
 }
 
 ShaderStageInput :: struct {
@@ -128,9 +128,23 @@ LoadShader :: proc(
 	return shader.vertex_shader, shader.fragment_shader
 }
 
-gfx_make_mesh_pipeline :: proc(gfx: Gfx) -> ^Pipeline {
+gfx_make_mesh_pipeline :: proc(
+	gfx: Gfx, shader: ^Shader, alpha_mode: AlphaMode, alpha_cutoff: f32
+) -> ^Pipeline {
 	color_target_desc := []SDL.GPUColorTargetDescription{
 		{ format = gfx.format },
+	}
+
+	if alpha_mode == .BLEND {
+		color_target_desc[0].blend_state = SDL.GPUColorTargetBlendState {
+			src_color_blendfactor = .SRC_ALPHA,
+			dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA,
+			color_blend_op = .ADD,
+			src_alpha_blendfactor = .SRC_ALPHA,
+			dst_alpha_blendfactor = .ONE_MINUS_SRC_ALPHA,
+			alpha_blend_op = .ADD,
+			enable_blend = true,
+		}
 	}
 
 	vertex_buffer_descriptions := []SDL.GPUVertexBufferDescription {
@@ -146,8 +160,7 @@ gfx_make_mesh_pipeline :: proc(gfx: Gfx) -> ^Pipeline {
 		{location = 3, buffer_slot = 3, format = .FLOAT4},
 	}
 
-	shader := gfx.mesh_shader
-	sdl_pipeline := SDL.CreateGPUGraphicsPipeline(gfx.gpu, SDL.GPUGraphicsPipelineCreateInfo {
+	create_info := SDL.GPUGraphicsPipelineCreateInfo {
 		vertex_shader = shader.vertex_shader,
 		fragment_shader = shader.fragment_shader,
 		vertex_input_state = {
@@ -160,14 +173,24 @@ gfx_make_mesh_pipeline :: proc(gfx: Gfx) -> ^Pipeline {
 			enable_depth_write = true,
 		},
 		target_info = SDL.GPUGraphicsPipelineTargetInfo {
-			num_color_targets = 1,
-			color_target_descriptions = raw_data(color_target_desc),
+			num_color_targets = u32(len(color_target_desc)),
+			color_target_descriptions = &color_target_desc[0],
 			depth_stencil_format = .D32_FLOAT,
 			has_depth_stencil_target = true,
 		},
-	})
+	}
+
+	if alpha_mode == .BLEND {
+		create_info.depth_stencil_state.enable_depth_write = false
+	}
+
+	sdl_pipeline := SDL.CreateGPUGraphicsPipeline(gfx.gpu, create_info)
+
+
+
 	pipeline := new(Pipeline)
 	pipeline.pipeline = sdl_pipeline
+	append(&shader.pipelines, pipeline)
 	return pipeline
 }
 
