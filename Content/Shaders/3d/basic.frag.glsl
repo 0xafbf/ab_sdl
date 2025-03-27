@@ -10,6 +10,10 @@ layout(set = 3, binding = 0) uniform Light {
 	vec3 light_pos;
 };
 
+layout(set = 3, binding = 1) uniform Levels {
+    float alpha_cutoff;
+};
+
 
 layout(location = 0) in vec2 v_texcoord;
 
@@ -24,6 +28,11 @@ layout(location = 0) out vec4 frag_color;
 
 void main() {
     vec4 color = texture(u_texture, v_texcoord);
+    float alpha = color.w;
+    if (alpha < alpha_cutoff) {
+        discard;
+    }
+
     vec4 metal_rough = texture(u_tex_metal_rough, v_texcoord);
     vec4 normal_map = texture(u_tex_normalmap, v_texcoord) * 2.0 - 1.0;
     //normal_map.y *= -1;

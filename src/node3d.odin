@@ -239,16 +239,52 @@ scene_load :: proc(path: cstring, gfx: Gfx) -> (scene: Node3D, out_mesh_instance
 	return root_node, mesh_instances[:]
 }
 
+RenderCall :: struct {
+	node: ^Node3D,
+	primitive: ^MeshPrimitive,
+}
+
 node3d_draw :: proc(instances: []MeshInstance3D, cmd_buf: ^SDL.GPUCommandBuffer, render_pass: ^SDL.GPURenderPass) {
+
+	render_list_opaque := make([dynamic]RenderCall)
+	render_list_transparent := make([dynamic]RenderCall)
+
+
 	for instance in instances {
 		node := instance.node
 		SDL.PushGPUVertexUniformData(cmd_buf, 1, &node.global_transform, size_of(node.global_transform))
 
 		mesh := instance.mesh
-		for primitive in mesh.primitives {
-			primitive_draw(render_pass, primitive)
+		for &primitive in mesh.primitives {
+			if primitive.material.alpha_mode == .BLEND {
+				append(&render_list_transparent, RenderCall {
+					node = node,
+					primitive = &primitive,
+				})
+			} else {
+				append(&render_list_opaque, RenderCall {
+					node = node,
+					primitive = &primitive,
+				})
+			}
 		}
 	}
+
+	for render_call in render_list_opaque {
+		node := render_call.node
+		SDL.PushGPUVertexUniformData(cmd_buf, 1, &node.global_transform, size_of(node.global_transform))
+		primitive_draw(cmd_buf, render_pass, render_call.primitive^)
+	}
+
+	for render_call in render_list_transparent {
+		node := render_call.node
+		SDL.PushGPUVertexUniformData(cmd_buf, 1, &node.global_transform, size_of(node.global_transform))
+		primitive_draw(cmd_buf, render_pass, render_call.primitive^)
+	}
+
+	delete(render_list_opaque)
+	delete(render_list_transparent)
+
 }
 
 
@@ -587,8 +623,19 @@ make_tangents :: proc(vertices: []f32, uvs: []f32, indices: []u32, normals: []f3
 	return buf_tangents
 }
 
-primitive_draw :: proc(render_pass: ^SDL.GPURenderPass, primitive: MeshPrimitive) {
-	SDL.BindGPUGraphicsPipeline(render_pass, primitive.material.pipeline.pipeline)
+primitive_draw :: proc(cmd_buf: ^SDL.GPUCommandBuffer, render_pass: ^SDL.GPURenderPass, primitive: MeshPrimitive) {
+	material := primitive.material
+
+	SDL.BindGPUGraphicsPipeline(render_pass, material.pipeline.pipeline)
+
+	levels := [1]f32{}
+
+	if material.alpha_mode == .MASK {
+		levels[0] = material.alpha_cutoff
+	}
+	SDL.PushGPUFragmentUniformData(cmd_buf, 1, &levels, size_of(levels))
+
+
 	mat := primitive.material
 	sampler_bindings := []SDL.GPUTextureSamplerBinding {
 		{

@@ -59,7 +59,7 @@ gfx_create :: proc(
 	gfx.compiler = shaderc.compiler_initialize()
 	gfx.format = window.format
 
-	gfx.mesh_shader = shader_load_file(&gfx, "Content/Shaders/3d/basic", {0, 0, 0, 2}, {4, 0, 0, 1})
+	gfx.mesh_shader = shader_load_file(&gfx, "Content/Shaders/3d/basic", {0, 0, 0, 2}, {4, 0, 0, 2})
 	gfx.line_shader = gfx_make_line_shader(&gfx)
 	gfx.env_shader = gfx_make_env_shader(&gfx)
 	return gfx
