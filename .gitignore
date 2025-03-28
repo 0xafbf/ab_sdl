@@ -1,4 +1,12 @@
+.vs
+SDL3-3.2.8-Windows-VC
+
 *.exe
 *.pdb
 *.dll
+*.lib
 *.spv
+
+*.exr
+*.glb
+*.gltf
