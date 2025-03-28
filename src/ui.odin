@@ -22,7 +22,6 @@ WindowData :: struct {
 	ui_rect_tex_pipeline: ^SDL.GPUGraphicsPipeline,
 	ui_texture: ^SDL.GPUTexture,
 	ui_sampler: ^SDL.GPUSampler,
-	pending_transfer: ^SDL.GPUTransferBuffer,
 }
 
 DrawContext :: struct {
@@ -37,7 +36,7 @@ ui_load_pipelines :: proc(gfx: ^Gfx, window: ^WindowData) {
 	ui_rect_shader_vert, ui_rect_shader_frag := LoadShader(gfx, "Content/Shaders/ui/rect", {0, 0, 0, 1}, {0, 0, 0, 1})
 
 	color_target_desc := []SDL.GPUColorTargetDescription{{
-		format = gfx.format
+		format = gfx.window_format
 	}}
 
 	gpu_device := gfx.gpu
@@ -46,8 +45,8 @@ ui_load_pipelines :: proc(gfx: ^Gfx, window: ^WindowData) {
 		fragment_shader = ui_rect_shader_frag,
 		primitive_type = .TRIANGLESTRIP,
 		target_info = {
-			num_color_targets = 1,
-			color_target_descriptions = raw_data(color_target_desc),
+			num_color_targets = u32(len(color_target_desc)),
+			color_target_descriptions = &color_target_desc[0],
 		},
 	})
 
@@ -58,7 +57,7 @@ ui_load_pipelines :: proc(gfx: ^Gfx, window: ^WindowData) {
 
 	color_target_desc_tex := []SDL.GPUColorTargetDescription{
 		{
-			format = gfx.format,
+			format = gfx.window_format,
 			blend_state = {
 				src_color_blendfactor = .SRC_ALPHA,
 				dst_color_blendfactor = .ONE_MINUS_SRC_ALPHA,
@@ -76,8 +75,8 @@ ui_load_pipelines :: proc(gfx: ^Gfx, window: ^WindowData) {
 		fragment_shader = ui_rect_tex_shader_frag,
 		primitive_type = .TRIANGLESTRIP,
 		target_info = {
-			num_color_targets = 1,
-			color_target_descriptions = raw_data(color_target_desc_tex),
+			num_color_targets = u32(len(color_target_desc_tex)),
+			color_target_descriptions = &color_target_desc_tex[0],
 		}
 	})
 
@@ -101,12 +100,27 @@ ui_load_pipelines :: proc(gfx: ^Gfx, window: ^WindowData) {
 		usage = .UPLOAD,
 		size = u32(buffer_size),
 	})
-	window.pending_transfer = transfer_buffer
+
 
 	transfer_buffer_mem := SDL.MapGPUTransferBuffer(gpu_device, transfer_buffer, false)
 	mem.copy_non_overlapping(transfer_buffer_mem, &mui.default_atlas_alpha[0], buffer_size);
 	SDL.UnmapGPUTransferBuffer(gpu_device, transfer_buffer)
 
+
+	copy_cmd_buf := SDL.AcquireGPUCommandBuffer(gpu_device)
+	copy_pass := SDL.BeginGPUCopyPass(copy_cmd_buf)
+	SDL.UploadToGPUTexture(copy_pass, SDL.GPUTextureTransferInfo {
+		transfer_buffer = transfer_buffer,
+		pixels_per_row = mui.DEFAULT_ATLAS_WIDTH,
+		rows_per_layer = mui.DEFAULT_ATLAS_HEIGHT,
+	}, SDL.GPUTextureRegion {
+		texture = window.ui_texture,
+		x = 0, y = 0,
+		w = mui.DEFAULT_ATLAS_WIDTH, h = mui.DEFAULT_ATLAS_HEIGHT, d = 1,
+	}, false)
+	SDL.EndGPUCopyPass(copy_pass)
+	copy_submit_result := SDL.SubmitGPUCommandBuffer(copy_cmd_buf)
+	SDL.ReleaseGPUTransferBuffer(gpu_device, transfer_buffer)
 
 }
 
@@ -122,42 +136,16 @@ ui_unload_pipelines :: proc(window: ^WindowData, gpu_device: ^SDL.GPUDevice) {
 
 draw_mui :: proc(window: ^WindowData, in_draw_ctx: DrawContext) {
 	draw_ctx := in_draw_ctx
-	if window.pending_transfer != nil {
-		copy_pass := SDL.BeginGPUCopyPass(draw_ctx.cmd_buf)
-		SDL.UploadToGPUTexture(copy_pass, SDL.GPUTextureTransferInfo {
-			transfer_buffer = window.pending_transfer,
-			pixels_per_row = mui.DEFAULT_ATLAS_WIDTH,
-			rows_per_layer = mui.DEFAULT_ATLAS_HEIGHT,
-		}, SDL.GPUTextureRegion {
-			texture = window.ui_texture, 
-			x = 0, y = 0, 
-			w = mui.DEFAULT_ATLAS_WIDTH, h = mui.DEFAULT_ATLAS_HEIGHT, d = 1,
-		}, false)
-		SDL.EndGPUCopyPass(copy_pass)
-		SDL.ReleaseGPUTransferBuffer(draw_ctx.gpu_device, window.pending_transfer)
-		window.pending_transfer = nil
-	}
 
 	mui_ctx: ^mui.Context = window.mui_ctx
 	mui_cmd: ^mui.Command
-
-
-
-	color_target_info := SDL.GPUColorTargetInfo {
-		texture = draw_ctx.swapchain_tex,
-		load_op = .LOAD,
-		store_op = .STORE,
-	}
-
-	render_pass := SDL.BeginGPURenderPass(draw_ctx.cmd_buf, &color_target_info, 1, nil)
-	draw_ctx.render_pass = render_pass
 
 	for mui.next_command(mui_ctx, &mui_cmd) {
 		switch e in mui_cmd.variant {
 		case ^mui.Command_Jump: fmt.println("Command_Jump")
 		case ^mui.Command_Clip:
 			sdl_rect := SDL.Rect {e.rect.x, e.rect.y, e.rect.w, e.rect.h}
-			SDL.SetGPUScissor(render_pass, sdl_rect)
+			SDL.SetGPUScissor(draw_ctx.render_pass, sdl_rect)
 		case ^mui.Command_Rect: 
 			window_draw_rect(window^, draw_ctx, e.rect, e.color)
 		case ^mui.Command_Icon:

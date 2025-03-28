@@ -67,6 +67,8 @@ main :: proc () {
 	log.info("SDL GetGPUSwapchainTextureFormat")
 	window.format = SDL.GetGPUSwapchainTextureFormat(gpu_device, sdl_window)
 
+	log.info("window format:", window.format)
+
 	gfx := gfx_create(gpu_device, window)
 	defer gfx_destroy(gfx)
 
@@ -209,36 +211,9 @@ main :: proc () {
 
 
 
-	scene_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
-	//scene_path :cstring= "Content/sample/damaged_helmet.glb"
+	//scene_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
+	scene_path :cstring= "Content/sample/damaged_helmet.glb"
 	scene, mesh_instances := scene_load(scene_path, gfx)
-
-	/*
-	helmet_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
-	helmet := mesh_load(helmet_path, gpu_device, false)
-	helmet_correct := mesh_load(helmet_path, gpu_device, true)
-	defer mesh_free(&helmet, gpu_device)
-
-	instances_a := []MeshInstance3D {
-		{
-			mesh = &helmet,
-			transform = PosRotScale{
-				position = {0, 0, 0},
-				rotation = {1.57, 0, 0},
-				scale = {1,1,1},
-			},
-		},
-	}
-
-	for &instance in instances_a {
-		instance_trs : PosRotScale = instance.transform.(PosRotScale)
-		instance_rot := instance_trs.rotation
-		quat := linalg.quaternion_from_euler_angles(instance_rot.x, instance_rot.y, instance_rot.z, .XYZ)
-
-		instance.global_transform = linalg.matrix4_from_trs(instance_trs.position, quat, instance_trs.scale)
-
-	}
-	*/
 
 	pitch := f32(math.TAU / 12)
 	yaw := f32(math.TAU / 8)
@@ -248,19 +223,9 @@ main :: proc () {
 	light_pitch := f32(math.TAU / 4 * 0.7)
 	light_yaw := f32(math.TAU / 8)
 
-	tex_depth := SDL.CreateGPUTexture(gpu_device, {
-		type = .D2,
-		format = .D32_FLOAT,
-		usage = {.DEPTH_STENCIL_TARGET},
-		width = window.size.x,
-		height = window.size.y,
-		layer_count_or_depth = 1,
-		num_levels = 1,
-		//sample_count = ._1 GPUSampleCount,  /**< The number of samples per texel. Only applies if the texture is used as a render target. */
-		//props:                PropertiesID,          /**< A properties ID for extensions. Should be 0 if no extensions are needed. */
-	})
-	defer SDL.ReleaseGPUTexture(gpu_device, tex_depth)
+	viewport: Viewport
 
+	viewport_recreate_buffers(gpu_device, &viewport, window.size)
 
 	bool_value: bool = false
 	my_color := [4]f32{1, 0.5, 0.2, 1}
@@ -277,19 +242,7 @@ main :: proc () {
 				window_event := sdl_event.window
 				window.size = {u32(window_event.data1), u32(window_event.data2)}
 
-				SDL.ReleaseGPUTexture(gpu_device, tex_depth)
-				tex_depth = SDL.CreateGPUTexture(gpu_device, {
-					type = .D2,
-					format = .D32_FLOAT,
-					usage = {.DEPTH_STENCIL_TARGET},
-					width = window.size.x,
-					height = window.size.y,
-					layer_count_or_depth = 1,
-					num_levels = 1,
-					//sample_count = ._1 GPUSampleCount,  /**< The number of samples per texel. Only applies if the texture is used as a render target. */
-					//props:                PropertiesID,          /**< A properties ID for extensions. Should be 0 if no extensions are needed. */
-				})
-
+				viewport_recreate_buffers(gpu_device, &viewport, window.size)
 				continue
 			}
 			mui_process_sdl_event(window.mui_ctx, sdl_event)
@@ -335,13 +288,13 @@ main :: proc () {
 		assert(swapchain_tex != nil)
 
 		color_target_info_3d := SDL.GPUColorTargetInfo {
-			texture = swapchain_tex,
+			texture = viewport.color_texture,
 			load_op = .LOAD,
 			store_op = .STORE,
 		}
 
 		depth_target_info := SDL.GPUDepthStencilTargetInfo {
-			texture = tex_depth,
+			texture = viewport.depth_texture,
 			// texture:          ^GPUTexture,  /**< The texture that will be used as the depth stencil target by the render pass. */
 			clear_depth = 1,
 			// clear_depth:      f32,          /**< The value to clear the depth component to at the beginning of the render pass. Ignored if GPU_LOADOP_CLEAR is not used. */
@@ -440,7 +393,6 @@ main :: proc () {
 		mesh_draw_verts(mesh_render_pass, line_z_mesh)
 
 
-
 		// draw meshes
 
 		if bool_value {
@@ -474,10 +426,27 @@ main :: proc () {
 		SDL.EndGPURenderPass(mesh_render_pass)
 
 
+		window_target_info := SDL.GPUColorTargetInfo {
+			texture = swapchain_tex,
+			load_op = .LOAD,
+			store_op = .STORE,
+		}
 
-		draw_ctx := DrawContext {gpu_device, cmd_buf, swapchain_tex, nil}
+		window_render_pass := SDL.BeginGPURenderPass(cmd_buf, &window_target_info, 1, nil)
+
+		SDL.BindGPUGraphicsPipeline(window_render_pass, gfx.linear_to_screen_pipeline.pipeline)
+		viewport_bindings := []SDL.GPUTextureSamplerBinding {
+			{
+				texture = viewport.color_texture,
+				sampler = window.ui_sampler,
+			}
+		}
+		SDL.BindGPUFragmentSamplers(window_render_pass, 0, &viewport_bindings[0], u32(len(viewport_bindings)))
+		SDL.DrawGPUPrimitives(window_render_pass, 4, 1, 0, 0)
+
+		draw_ctx := DrawContext {gpu_device, cmd_buf, swapchain_tex, window_render_pass}
+
 		draw_mui(&window, draw_ctx)
-
 
 		submit_result := SDL.SubmitGPUCommandBuffer(cmd_buf)
 

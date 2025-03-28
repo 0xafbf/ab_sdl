@@ -20,11 +20,12 @@ Gfx :: struct {
 	gpu: ^SDL.GPUDevice,
 	compiler: shaderc.compiler_t,
 
-	format: SDL.GPUTextureFormat,
+	window_format: SDL.GPUTextureFormat,
 
 	mesh_shader: ^Shader,
 	line_shader: Pipeline,
 	env_shader: Pipeline,
+	linear_to_screen_pipeline: Pipeline,
 
 	shaders: [dynamic]^Shader
 }
@@ -50,6 +51,41 @@ ShaderStageInput :: struct {
 	num_uniform_buffers: u32,
 }
 
+Viewport :: struct {
+	size: [2]u32,
+	color_texture: ^SDL.GPUTexture,
+	depth_texture: ^SDL.GPUTexture,
+}
+
+VIEWPORT_COLOR_FORMAT :: SDL.GPUTextureFormat.R32G32B32A32_FLOAT
+VIEWPORT_DEPTH_FORMAT :: SDL.GPUTextureFormat.D32_FLOAT
+
+viewport_recreate_buffers :: proc(gpu: ^SDL.GPUDevice, viewport: ^Viewport, size: [2]u32) {
+	if viewport.color_texture != nil {
+		SDL.ReleaseGPUTexture(gpu, viewport.color_texture)
+		SDL.ReleaseGPUTexture(gpu, viewport.depth_texture)
+	}
+	viewport.depth_texture = SDL.CreateGPUTexture(gpu, {
+		type = .D2,
+		format = VIEWPORT_DEPTH_FORMAT,
+		usage = {.DEPTH_STENCIL_TARGET},
+		width = size.x,
+		height = size.y,
+		layer_count_or_depth = 1,
+		num_levels = 1,
+		//sample_count = ._1 GPUSampleCount,  /**< The number of samples per texel. Only applies if the texture is used as a render target. */
+		//props:                PropertiesID,          /**< A properties ID for extensions. Should be 0 if no extensions are needed. */
+	})
+	viewport.color_texture = SDL.CreateGPUTexture(gpu, {
+		type = .D2,
+		format = VIEWPORT_COLOR_FORMAT,
+		usage = {.COLOR_TARGET, .SAMPLER},
+		width = size.x,
+		height = size.y,
+		layer_count_or_depth = 1,
+		num_levels = 1,
+	})
+}
 
 gfx_create :: proc(
 	gpu: ^SDL.GPUDevice, window: WindowData
@@ -57,11 +93,27 @@ gfx_create :: proc(
 
 	gfx.gpu = gpu
 	gfx.compiler = shaderc.compiler_initialize()
-	gfx.format = window.format
+	gfx.window_format = window.format
 
 	gfx.mesh_shader = shader_load_file(&gfx, "Content/Shaders/3d/basic", {0, 0, 0, 2}, {4, 0, 0, 2})
 	gfx.line_shader = gfx_make_line_shader(&gfx)
 	gfx.env_shader = gfx_make_env_shader(&gfx)
+
+	linear_to_screen_shader := shader_load_file(&gfx, "Content/Shaders/ui/linear_to_screen", {0, 0, 0, 0}, {1, 0, 0, 0})
+
+	color_target_desc := []SDL.GPUColorTargetDescription{{
+		format = gfx.window_format
+	}}
+	gfx.linear_to_screen_pipeline.pipeline = SDL.CreateGPUGraphicsPipeline(gfx.gpu, SDL.GPUGraphicsPipelineCreateInfo {
+		vertex_shader = linear_to_screen_shader.vertex_shader,
+		fragment_shader = linear_to_screen_shader.fragment_shader,
+		primitive_type = .TRIANGLESTRIP,
+		target_info = SDL.GPUGraphicsPipelineTargetInfo {
+			num_color_targets = u32(len(color_target_desc)),
+			color_target_descriptions = &color_target_desc[0],
+		},
+	})
+
 	return gfx
 }
 
@@ -132,7 +184,7 @@ gfx_make_mesh_pipeline :: proc(
 	gfx: Gfx, shader: ^Shader, alpha_mode: AlphaMode, alpha_cutoff: f32
 ) -> ^Pipeline {
 	color_target_desc := []SDL.GPUColorTargetDescription{
-		{ format = gfx.format },
+		{ format = VIEWPORT_COLOR_FORMAT },
 	}
 
 	if alpha_mode == .BLEND {
@@ -175,7 +227,7 @@ gfx_make_mesh_pipeline :: proc(
 		target_info = SDL.GPUGraphicsPipelineTargetInfo {
 			num_color_targets = u32(len(color_target_desc)),
 			color_target_descriptions = &color_target_desc[0],
-			depth_stencil_format = .D32_FLOAT,
+			depth_stencil_format = VIEWPORT_DEPTH_FORMAT,
 			has_depth_stencil_target = true,
 		},
 	}
@@ -201,7 +253,7 @@ gfx_make_line_shader :: proc(gfx: ^Gfx) -> Pipeline {
 	defer SDL.ReleaseGPUShader(gfx.gpu, shader_vert)
 	defer SDL.ReleaseGPUShader(gfx.gpu, shader_frag)
 	color_target_desc := []SDL.GPUColorTargetDescription{
-		{ format = gfx.format },
+		{ format = VIEWPORT_COLOR_FORMAT },
 	}
 
 	vertex_buffer_descriptions := []SDL.GPUVertexBufferDescription {
@@ -236,7 +288,7 @@ gfx_make_line_shader :: proc(gfx: ^Gfx) -> Pipeline {
 		target_info = SDL.GPUGraphicsPipelineTargetInfo {
 			num_color_targets = 1,
 			color_target_descriptions = raw_data(color_target_desc),
-			depth_stencil_format = .D32_FLOAT,
+			depth_stencil_format = VIEWPORT_DEPTH_FORMAT,
 			has_depth_stencil_target = true,
 		},
 	})
@@ -249,7 +301,7 @@ gfx_make_env_shader :: proc(gfx: ^Gfx) -> Pipeline {
 	defer SDL.ReleaseGPUShader(gfx.gpu, shader_vert)
 	defer SDL.ReleaseGPUShader(gfx.gpu, shader_frag)
 	color_target_desc := []SDL.GPUColorTargetDescription{{
-		format = gfx.format
+		format = VIEWPORT_COLOR_FORMAT,
 	}}
 	shader: Pipeline
 	shader.pipeline = SDL.CreateGPUGraphicsPipeline(gfx.gpu, SDL.GPUGraphicsPipelineCreateInfo {
