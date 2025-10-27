@@ -12,6 +12,7 @@ import "core:math/linalg"
 import hlm "core:math/linalg/hlsl"
 import "core:fmt"
 import "core:mem"
+import "core:log"
 
 
 WindowData :: struct {

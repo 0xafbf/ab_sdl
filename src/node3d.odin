@@ -146,7 +146,7 @@ scene_load :: proc(path: cstring, gfx: Gfx) -> (scene: Node3D, out_mesh_instance
 	result: cgltf.result
 
 	data, result = cgltf.parse_file({}, path)
-	assert(result == .success)
+	log.assertf(result == .success, "unable to parse file at path %s", path)
 	load_result := cgltf.load_buffers({}, data, path)
 	assert(load_result == .success)
 	defer cgltf.free(data)

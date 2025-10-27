@@ -8,6 +8,9 @@ import IMG "vendor:sdl3/image"
 import mui "vendor:microui"
 import exr "vendor:OpenEXRCore"
 
+import stbi "vendor:stb/image"
+
+import "core:c"
 import "core:fmt"
 import "core:log"
 import "core:math"
@@ -105,7 +108,7 @@ main :: proc () {
 	dt: f64 = 0
 	last_ticks: u64 = SDL.GetTicksNS()
 
-
+/*
 	hdr_path: cstring = "Content/sample/empty_play_room_4k.exr"
 	log.info("hdr IMG.Load")
 	exr_ctx: exr.context_t
@@ -186,9 +189,16 @@ main :: proc () {
 
 		exr.decoding_destroy(exr_ctx, &decoder)
 	}	
+	*/
+
+	hdr_path: cstring = "Content/sample/empty_play_room_1k.hdr"
+	hdr_size: [2]c.int
+	hdr_channels: c.int
+	hdr_pixels := ([^][4]f32)(stbi.loadf(hdr_path, &hdr_size.x, &hdr_size.y, &hdr_channels, 4))
+
 	log.info("finished decoding")
 
-	environment := ab_create_texture_raw(gpu_device, {u32(exr_size.x), u32(exr_size.y)}, exr_pixels)
+	environment := ab_create_texture_raw(gpu_device, {u32(hdr_size.x), u32(hdr_size.y)}, hdr_pixels[:(hdr_size.x*hdr_size.y)])
 	
 	/*
 	Hdr_img := IMG.Load(hdr_path)

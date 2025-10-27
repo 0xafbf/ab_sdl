@@ -405,7 +405,7 @@ ab_create_texture_raw :: proc(gpu: ^SDL.GPUDevice, size: [2]u32, data_rgba: [][4
 
 	log.info("B")
 	transfer_mem := SDL.MapGPUTransferBuffer(gpu, result.transfer_buffer, false)
-	mem.copy_non_overlapping(transfer_mem, &data_rgba[0][0], int(buffer_size))
+	mem.copy_non_overlapping(transfer_mem, &data_rgba[0], int(buffer_size))
 	SDL.UnmapGPUTransferBuffer(gpu, result.transfer_buffer)
 	log.info("C")
 	return result

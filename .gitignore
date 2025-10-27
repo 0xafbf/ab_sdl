@@ -7,6 +7,3 @@ SDL3-3.2.8-Windows-VC
 *.lib
 *.spv
 
-*.exr
-*.glb
-*.gltf
