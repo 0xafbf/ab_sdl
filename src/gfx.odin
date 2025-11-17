@@ -330,7 +330,7 @@ CompLoadShader :: proc(
 	compile_options := shaderc.compile_options_initialize()
 	shaderc.compile_options_set_source_language(compile_options, shaderc.source_language.glsl)
 
-	log.info("compiling shader:", in_path)
+	// log.info("compiling shader:", in_path)
 	shader_kind := shaderc.shader_kind.vertex_shader
 	if in_stage == .FRAGMENT {
 		shader_kind = .fragment_shader
@@ -356,7 +356,7 @@ CompLoadShader :: proc(
 
 	SDL.free(shader_code)
 
-	log.info("create gpushader:", in_path)
+	// log.info("create gpushader:", in_path)
 	shader_info := SDL.GPUShaderCreateInfo {
 		code_size = shaderc.result_get_length(compile_result),
 		code = shaderc.result_get_bytes(compile_result),
@@ -386,7 +386,7 @@ Texture :: struct {
 
 ab_create_texture_raw :: proc(gpu: ^SDL.GPUDevice, size: [2]u32, data_rgba: [][4]f32) -> (result: Texture) {
 	result.size = size
-	log.info("A")
+	// log.info("A")
 	texture_format: SDL.GPUTextureFormat = .R32G32B32A32_FLOAT
 	result.texture = SDL.CreateGPUTexture(gpu, SDL.GPUTextureCreateInfo{
 		type = .D2,
@@ -403,11 +403,11 @@ ab_create_texture_raw :: proc(gpu: ^SDL.GPUDevice, size: [2]u32, data_rgba: [][4
 		size = buffer_size,
 	})
 
-	log.info("B")
+	// log.info("B")
 	transfer_mem := SDL.MapGPUTransferBuffer(gpu, result.transfer_buffer, false)
 	mem.copy_non_overlapping(transfer_mem, &data_rgba[0], int(buffer_size))
 	SDL.UnmapGPUTransferBuffer(gpu, result.transfer_buffer)
-	log.info("C")
+	// log.info("C")
 	return result
 }
 
@@ -495,7 +495,7 @@ MeshBuffer :: struct {
 }
 
 meshbuffer_create :: proc (gpu: ^SDL.GPUDevice, field: []$T, usage: SDL.GPUBufferUsageFlags) -> MeshBuffer {
-	fmt.println("meshbuffer_create")
+	// fmt.println("meshbuffer_create")
 	buf: MeshBuffer
 	buf.size = u32(len(field) * size_of(T))
 	buf.gpu_buffer = SDL.CreateGPUBuffer(gpu, {

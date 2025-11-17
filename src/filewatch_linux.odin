@@ -51,7 +51,7 @@ fsw_add_dir :: proc (fsw: ^FSW, dir: string) -> int {
 
     path := strings.clone_to_cstring(dir, context.temp_allocator)
 
-    fmt.println("adding dir:", path)
+    // fmt.println("adding dir:", path)
     entry: ^posix.dirent
     dp: posix.DIR = posix.opendir(path)
     if dp == nil {

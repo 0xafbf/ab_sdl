@@ -220,6 +220,8 @@ main :: proc () {
 	log.info("submitted copy")
 
 
+	new_scene := scene_load_new("Content/scenes/test.scene")
+
 
 	//scene_path :cstring= "Content/sample/AlphaBlendModeTest.glb"
 	scene_path :cstring= "Content/sample/damaged_helmet.glb"

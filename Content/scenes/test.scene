@@ -1,0 +1,28 @@
+[asset path="Content/sample/damaged_helmet.glb" id="1_abcd"]
+
+[node type="Node3D" id="root"]
+
+[node type="MeshInstance3D" parent="root"]
+mesh = Ref(1_abcd)
+transform = {
+	position = {0, 0, 0}
+	rotation = {0, 0, 0}
+	scale = {1, 1, 1}
+}
+
+[node type="MeshInstance3D" parent="root"]
+mesh = Ref(1_abcd)
+transform = {
+	position = {3, 0, 0}
+	rotation = {0, 0, 0}
+	scale = {1, 1, 1}
+}
+
+[node type="MeshInstance3D" parent="root"]
+mesh = Ref(1_abcd)
+transform = {
+	position = {0, 3, 0}
+	rotation = {0, 0, 0}
+	scale = {1, 1, 1}
+}
+
