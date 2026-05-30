@@ -4,7 +4,7 @@ import "core:c"
 when ODIN_OS == .Windows {
 	@(export) foreign import lib { "shaderc_shared.lib" }
 } else {
-	@(export) foreign import lib { "system:libshaderc_shared.so" }
+	@(export) foreign import lib { "system:shaderc" }
 }
 
 source_language :: enum {

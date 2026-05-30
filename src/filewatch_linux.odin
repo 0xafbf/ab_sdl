@@ -108,14 +108,14 @@ fsw_get_events :: proc ( fsw: ^FSW, loop_kind:= FSW_Loop_Type.NONBLOCKING )  -> 
         {posix.FD(fsw.inotify_fd), {.IN}, {}}
     }
 
-    poll_result := posix.poll(raw_data(notify_fds), u32(len(notify_fds)), 0)
+    poll_result := posix.poll(raw_data(notify_fds), u64(len(notify_fds)), 0)
 
     if poll_result == 0 {
         return {}
     }
 
 
-    length, read_err := os.read(os.Handle(fsw.inotify_fd), buffer[:])
+    length, err_code := linux.read((fsw.inotify_fd), buffer[:])
 
     cursor: int = 0
 
