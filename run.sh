@@ -3,7 +3,7 @@ export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
 
 
 ODIN="../odin/odin"
-PROJECT="src"
+PROJECT="scene3d"
 TARGET="linux"
 
 compile_cmd=("$ODIN" run "$PROJECT")
